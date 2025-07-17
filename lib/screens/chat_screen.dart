@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../data/conversation_data.dart';
+import '../models/message_model.dart';
 
 class ChatScreen extends StatefulWidget {
   @override
@@ -46,10 +47,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           }
 
           if (result.finalResult) {
-            ConversationData.addMessage(
+            addMessageToConversation(
               "Juan Dela Cruz",
-              result.recognizedWords,
+              Message(text: result.recognizedWords, isUser: true),
             );
+
             Future.delayed(Duration(seconds: 2), () {
               if (mounted) setState(() => _outputText = '');
             });
@@ -68,7 +70,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Future<void> _speak(String phrase) async {
     setState(() => _outputText = phrase);
-    ConversationData.addMessage("Juan Dela Cruz", phrase);
+    addMessageToConversation(
+      "Juan Dela Cruz",
+      Message(text: phrase, isUser: true),
+    );
     await _flutterTts.setLanguage("tl-PH");
     await _flutterTts.setPitch(1.0);
     await _flutterTts.speak(phrase);
