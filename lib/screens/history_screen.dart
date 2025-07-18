@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'conversation_detail_screen.dart'; // 🔄 Import the new screen
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -185,7 +186,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     color: Colors.grey.shade500,
                                   ),
                                   onTap: () {
-                                    // TODO: Navigate to conversation detail screen
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            ConversationDetailScreen(
+                                              contactName:
+                                                  message['name'] ?? '',
+                                            ),
+                                      ),
+                                    );
                                   },
                                 ),
                               ),
