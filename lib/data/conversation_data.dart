@@ -1,15 +1,20 @@
-class ConversationData {
-  static List<Map<String, String>> _conversations = [];
+import '../models/message_model.dart';
 
-  static void addMessage(String name, String message) {
-    _conversations.insert(0, {'name': name, 'message': message});
-  }
+Map<String, List<Message>> conversations = {
+  "Juan Dela Cruz": [
+    Message(text: "Hi Ana!", isUser: true),
+    Message(text: "Kamusta ka na?", isUser: true),
+    Message(text: "Okay lang ako, ikaw?", isUser: false),
+  ],
+  "Ana Santos": [
+    Message(text: "Hello Ben!", isUser: true),
+    Message(text: "Hi! Anong kailangan mo?", isUser: false),
+  ],
+};
 
-  static void deleteMessage(int index) {
-    _conversations.removeAt(index);
+void addMessageToConversation(String contactName, Message message) {
+  if (!conversations.containsKey(contactName)) {
+    conversations[contactName] = [];
   }
-
-  static List<Map<String, String>> getAll() {
-    return _conversations;
-  }
+  conversations[contactName]!.add(message);
 }
