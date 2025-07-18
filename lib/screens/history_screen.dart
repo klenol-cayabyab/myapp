@@ -1,15 +1,29 @@
 import 'package:flutter/material.dart';
 
 class HistoryScreen extends StatefulWidget {
+  const HistoryScreen({super.key});
+
   @override
   _HistoryScreenState createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
   List<Map<String, String>> messages = [
-    {'name': 'Maria Santos', 'preview': 'Hello! Kumusta ka na?'},
-    {'name': 'Juan Dela Cruz', 'preview': 'Sige po, salamat!'},
-    {'name': 'Mark Reyes', 'preview': 'Can we talk tomorrow?'},
+    {
+      'name': 'Maria Santos',
+      'preview': 'Hello! Kumusta ka na?',
+      'time': '10:30 AM',
+    },
+    {
+      'name': 'Juan Dela Cruz',
+      'preview': 'Sige po, salamat!',
+      'time': 'Yesterday',
+    },
+    {
+      'name': 'Mark Reyes',
+      'preview': 'Can we talk tomorrow?',
+      'time': 'Jul 15',
+    },
   ];
 
   @override
@@ -28,7 +42,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             Column(
               children: [
-                // 🟦 Header Title Only
+                // 🟦 Header Title
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: Center(
@@ -114,6 +128,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 5,
+                                      offset: Offset(0, 3),
+                                    ),
+                                  ],
                                 ),
                                 child: ListTile(
                                   leading: CircleAvatar(
@@ -123,20 +144,48 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       style: TextStyle(color: Colors.white),
                                     ),
                                   ),
-                                  title: Text(
-                                    message['name'] ?? '',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: nameFontSize,
+                                  title: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          message['name'] ?? '',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: nameFontSize,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Text(
+                                        message['time'] ?? '',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  subtitle: Padding(
+                                    padding: const EdgeInsets.only(top: 4.0),
+                                    child: Text(
+                                      message['preview'] ?? '',
+                                      style: TextStyle(
+                                        fontSize: previewFontSize,
+                                        color: Colors.grey.shade800,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  subtitle: Text(
-                                    message['preview'] ?? '',
-                                    style: TextStyle(fontSize: previewFontSize),
+                                  trailing: Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 16,
+                                    color: Colors.grey.shade500,
                                   ),
-                                  trailing: Icon(Icons.arrow_forward_ios),
                                   onTap: () {
-                                    // TODO: Navigate to conversation detail
+                                    // TODO: Navigate to conversation detail screen
                                   },
                                 ),
                               ),
