@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'conversation_detail_screen.dart'; // 🔄 Import the new screen
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'conversation_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -9,23 +11,188 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  List<Map<String, String>> messages = [
-    {
-      'name': 'Maria Santos',
-      'preview': 'Hello! Kumusta ka na?',
-      'time': '10:30 AM',
-    },
-    {
-      'name': 'Juan Dela Cruz',
-      'preview': 'Sige po, salamat!',
-      'time': 'Yesterday',
-    },
-    {
-      'name': 'Mark Reyes',
-      'preview': 'Can we talk tomorrow?',
-      'time': 'Jul 15',
-    },
-  ];
+  List<Map<String, String>> messages = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+  }
+
+  // 💾 Load messages from SharedPreferences
+  Future<void> _loadMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? messagesJson = prefs.getString('conversation_messages');
+
+      if (messagesJson != null) {
+        final List<dynamic> messagesList = json.decode(messagesJson);
+        setState(() {
+          messages = messagesList
+              .map((item) => Map<String, String>.from(item))
+              .toList();
+          isLoading = false;
+        });
+      } else {
+        // Default messages if no data exists
+        setState(() {
+          messages = [
+            {
+              'name': 'Maria Santos',
+              'preview': 'Hello! Kumusta ka na?',
+              'time': '10:30 AM',
+            },
+            {
+              'name': 'Juan Dela Cruz',
+              'preview': 'Sige po, salamat!',
+              'time': 'Yesterday',
+            },
+            {
+              'name': 'Mark Reyes',
+              'preview': 'Can we talk tomorrow?',
+              'time': 'Jul 15',
+            },
+          ];
+          isLoading = false;
+        });
+        _saveMessages(); // Save default messages
+      }
+    } catch (e) {
+      print('Error loading messages: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  // 💾 Save messages to SharedPreferences
+  Future<void> _saveMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String messagesJson = json.encode(messages);
+      await prefs.setString('conversation_messages', messagesJson);
+    } catch (e) {
+      print('Error saving messages: $e');
+    }
+  }
+
+  // ➕ Add new conversation
+  Future<void> _addNewConversation() async {
+    final TextEditingController nameController = TextEditingController();
+    final TextEditingController messageController = TextEditingController();
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'New Conversation',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.blue.shade800,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(
+                labelText: 'Contact Name',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                prefixIcon: Icon(Icons.person),
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: messageController,
+              decoration: InputDecoration(
+                labelText: 'Initial Message',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                prefixIcon: Icon(Icons.message),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade800,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onPressed: () {
+              if (nameController.text.trim().isNotEmpty) {
+                Navigator.of(ctx).pop({
+                  'name': nameController.text.trim(),
+                  'preview': messageController.text.trim().isEmpty
+                      ? 'No messages yet'
+                      : messageController.text.trim(),
+                  'time': _getCurrentTime(),
+                });
+              }
+            },
+            child: Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        messages.insert(0, result); // Add to top of list
+      });
+      await _saveMessages(); // Save to storage
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('New conversation added!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    }
+  }
+
+  // 🕒 Get current time
+  String _getCurrentTime() {
+    final now = DateTime.now();
+    final hour = now.hour.toString().padLeft(2, '0');
+    final minute = now.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  // 🗑️ Delete conversation
+  Future<void> _deleteConversation(int index) async {
+    setState(() {
+      messages.removeAt(index);
+    });
+    await _saveMessages(); // Save changes
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Conversation deleted'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +203,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
     double previewFontSize = (screenWidth * 0.04).clamp(14.0, 18.0);
     double emptyFontSize = (screenWidth * 0.045).clamp(16.0, 20.0);
 
+    if (isLoading) {
+      return Scaffold(
+        backgroundColor: Colors.blue.shade900,
+        body: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.blue.shade900,
       body: SafeArea(
@@ -43,34 +221,74 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             Column(
               children: [
-                // 🟦 Header Title
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: Center(
-                    child: Text(
-                      'Conversation History',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: titleFontSize,
-                        fontWeight: FontWeight.bold,
-                      ),
+                // 🟦 Enhanced Header
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 20,
+                    horizontal: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.blue.shade800, Colors.blue.shade900],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Conversation History',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: titleFontSize,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        '${messages.length} conversation${messages.length != 1 ? 's' : ''}',
+                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ],
                   ),
                 ),
 
-                // 📜 Message List
+                // 📜 Enhanced Message List
                 Expanded(
                   child: messages.isEmpty
                       ? Center(
-                          child: Text(
-                            'No conversations yet.',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: emptyFontSize,
-                            ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.chat_bubble_outline,
+                                size: 64,
+                                color: Colors.white30,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'No conversations yet.',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: emptyFontSize,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Tap the + button to start a new conversation',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
                           ),
                         )
                       : ListView.builder(
+                          padding: EdgeInsets.only(bottom: 100),
                           itemCount: messages.length,
                           itemBuilder: (context, index) {
                             final message = messages[index];
@@ -82,121 +300,224 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 return await showDialog(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
-                                    title: Text('Are you sure?'),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    title: Text(
+                                      'Delete Conversation?',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.red.shade700,
+                                      ),
+                                    ),
                                     content: Text(
-                                      'Do you really want to delete this conversation?',
+                                      'Are you sure you want to delete this conversation with ${message['name']}?',
                                     ),
                                     actions: [
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.of(ctx).pop(false),
-                                        child: Text('Cancel'),
+                                        child: Text(
+                                          'Cancel',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
                                       ),
-                                      TextButton(
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          foregroundColor: Colors.white,
+                                        ),
                                         onPressed: () =>
                                             Navigator.of(ctx).pop(true),
-                                        child: Text(
-                                          'Delete',
-                                          style: TextStyle(color: Colors.red),
-                                        ),
+                                        child: Text('Delete'),
                                       ),
                                     ],
                                   ),
                                 );
                               },
-                              onDismissed: (direction) {
-                                setState(() {
-                                  messages.removeAt(index);
-                                });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Conversation deleted'),
-                                  ),
-                                );
-                              },
+                              onDismissed: (direction) =>
+                                  _deleteConversation(index),
                               background: Container(
                                 alignment: Alignment.centerRight,
                                 padding: EdgeInsets.only(right: 20),
-                                color: Colors.red,
-                                child: Icon(Icons.delete, color: Colors.white),
-                              ),
-                              child: Container(
-                                width: double.infinity,
                                 margin: EdgeInsets.symmetric(
                                   horizontal: 16,
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: Colors.red,
                                   borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 5,
-                                      offset: Offset(0, 3),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.delete,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'Delete',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: Colors.blue.shade800,
-                                    child: Text(
-                                      message['name']![0],
-                                      style: TextStyle(color: Colors.white),
+                              ),
+                              child: Container(
+                                width: double.infinity,
+                                margin: EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.08),
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4),
                                     ),
-                                  ),
-                                  title: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          message['name'] ?? '',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: nameFontSize,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
+                                  ],
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(16),
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              ConversationDetailScreen(
+                                                contactName:
+                                                    message['name'] ?? '',
+                                              ),
                                         ),
-                                      ),
-                                      Text(
-                                        message['time'] ?? '',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  subtitle: Padding(
-                                    padding: const EdgeInsets.only(top: 4.0),
-                                    child: Text(
-                                      message['preview'] ?? '',
-                                      style: TextStyle(
-                                        fontSize: previewFontSize,
-                                        color: Colors.grey.shade800,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  trailing: Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 16,
-                                    color: Colors.grey.shade500,
-                                  ),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            ConversationDetailScreen(
-                                              contactName:
-                                                  message['name'] ?? '',
+                                      );
+                                    },
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: Row(
+                                        children: [
+                                          // Avatar with gradient
+                                          Container(
+                                            width: 50,
+                                            height: 50,
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                colors: [
+                                                  Colors.blue.shade600,
+                                                  Colors.blue.shade800,
+                                                ],
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(25),
                                             ),
+                                            child: Center(
+                                              child: Text(
+                                                message['name']![0]
+                                                    .toUpperCase(),
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 20,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+
+                                          SizedBox(width: 16),
+
+                                          // Content
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        message['name'] ?? '',
+                                                        style: TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize:
+                                                              nameFontSize,
+                                                          color: Colors
+                                                              .grey
+                                                              .shade800,
+                                                        ),
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ),
+                                                    Container(
+                                                      padding:
+                                                          EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            Colors.blue.shade50,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              12,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        message['time'] ?? '',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          color: Colors
+                                                              .blue
+                                                              .shade700,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                SizedBox(height: 6),
+                                                Text(
+                                                  message['preview'] ?? '',
+                                                  style: TextStyle(
+                                                    fontSize: previewFontSize,
+                                                    color: Colors.grey.shade600,
+                                                    height: 1.3,
+                                                  ),
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          SizedBox(width: 8),
+
+                                          // Arrow
+                                          Icon(
+                                            Icons.arrow_forward_ios,
+                                            size: 16,
+                                            color: Colors.grey.shade400,
+                                          ),
+                                        ],
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
@@ -206,16 +527,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ],
             ),
 
-            // ➕ Floating Add Button
+            // ➕ Enhanced Floating Add Button
             Positioned(
-              bottom: 20,
-              right: 20,
-              child: FloatingActionButton(
-                onPressed: () {
-                  // TODO: Add contact form
-                },
-                backgroundColor: Colors.yellow,
-                child: Icon(Icons.add, color: Colors.black),
+              bottom: 24,
+              right: 24,
+              child: FloatingActionButton.extended(
+                onPressed: _addNewConversation,
+                backgroundColor: Colors.yellow.shade600,
+                foregroundColor: Colors.black87,
+                elevation: 8,
+                label: Text(
+                  'New Chat',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                icon: Icon(Icons.add_comment, size: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
             ),
           ],
