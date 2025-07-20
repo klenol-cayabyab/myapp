@@ -20,7 +20,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _loadMessages();
   }
 
-  // 💾 Load messages from SharedPreferences
   Future<void> _loadMessages() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -35,7 +34,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
           isLoading = false;
         });
       } else {
-        // Default messages if no data exists
         setState(() {
           messages = [
             {
@@ -56,7 +54,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ];
           isLoading = false;
         });
-        _saveMessages(); // Save default messages
+        _saveMessages();
       }
     } catch (e) {
       print('Error loading messages: $e');
@@ -66,7 +64,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  // 💾 Save messages to SharedPreferences
   Future<void> _saveMessages() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -77,7 +74,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  // ➕ Add new conversation
   Future<void> _addNewConversation() async {
     final TextEditingController nameController = TextEditingController();
     final TextEditingController messageController = TextEditingController();
@@ -154,13 +150,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     if (result != null) {
       setState(() {
-        messages.insert(0, result); // Add to top of list
+        messages.insert(0, result);
       });
-      await _saveMessages(); // Save to storage
+      await _saveMessages();
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('New conversation added!'),
+          content: Text('New conversation added'),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -169,7 +165,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
-  // 🕒 Get current time
   String _getCurrentTime() {
     final now = DateTime.now();
     final hour = now.hour.toString().padLeft(2, '0');
@@ -177,12 +172,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return '$hour:$minute';
   }
 
-  // 🗑️ Delete conversation
   Future<void> _deleteConversation(int index) async {
     setState(() {
       messages.removeAt(index);
     });
-    await _saveMessages(); // Save changes
+    await _saveMessages();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -197,7 +191,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
-
     double titleFontSize = (screenWidth * 0.05).clamp(18.0, 24.0);
     double nameFontSize = (screenWidth * 0.045).clamp(16.0, 20.0);
     double previewFontSize = (screenWidth * 0.04).clamp(14.0, 18.0);
@@ -221,7 +214,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             Column(
               children: [
-                // 🟦 Enhanced Header
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
@@ -253,8 +245,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ],
                   ),
                 ),
-
-                // 📜 Enhanced Message List
                 Expanded(
                   child: messages.isEmpty
                       ? Center(
@@ -406,7 +396,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       padding: EdgeInsets.all(16),
                                       child: Row(
                                         children: [
-                                          // Avatar with gradient
                                           Container(
                                             width: 50,
                                             height: 50,
@@ -432,10 +421,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                               ),
                                             ),
                                           ),
-
                                           SizedBox(width: 16),
-
-                                          // Content
                                           Expanded(
                                             child: Column(
                                               crossAxisAlignment:
@@ -505,10 +491,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                               ],
                                             ),
                                           ),
-
                                           SizedBox(width: 8),
-
-                                          // Arrow
                                           Icon(
                                             Icons.arrow_forward_ios,
                                             size: 16,
@@ -526,8 +509,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 ),
               ],
             ),
-
-            // ➕ Enhanced Floating Add Button
             Positioned(
               bottom: 24,
               right: 24,

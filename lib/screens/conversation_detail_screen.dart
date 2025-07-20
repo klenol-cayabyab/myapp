@@ -15,7 +15,6 @@ class ConversationDetailScreen extends StatefulWidget {
 class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
   final TextEditingController _messageController = TextEditingController();
 
-  // Mock conversations data (same as your existing data)
   Map<String, List<Message>> conversations = {
     "Juan Dela Cruz": [
       Message(text: "Hi Ana!", isUser: true),
@@ -87,21 +86,16 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
         actions: [
           IconButton(
             icon: Icon(Icons.videocam, color: Colors.white),
-            onPressed: () {
-              // Video call functionality
-            },
+            onPressed: () {},
           ),
           IconButton(
             icon: Icon(Icons.call, color: Colors.white),
-            onPressed: () {
-              // Voice call functionality
-            },
+            onPressed: () {},
           ),
         ],
       ),
       body: Column(
         children: [
-          // Messages List
           Expanded(
             child: messages.isEmpty
                 ? Center(
@@ -193,8 +187,6 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
                     },
                   ),
           ),
-
-          // Message Input
           Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -243,9 +235,8 @@ class _ConversationDetailScreenState extends State<ConversationDetailScreen> {
           ),
         ],
       ),
-      // 🔥 ADD THE SAME BOTTOM NAVIGATION HERE!
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 1, // History tab since we're in conversation
+        currentIndex: 1,
         selectedItemColor: Colors.yellow,
         unselectedItemColor: Colors.white,
         backgroundColor: Color(0xFF062e5c),

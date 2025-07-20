@@ -16,8 +16,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   bool _isListening = false;
   bool _isMicMode = true;
   String _outputText = '';
-  String _selectedContact = 'Juan Dela Cruz'; // Default contact
-  List<Message> _sessionMessages = []; // Local session messages
+  String _selectedContact = 'Juan Dela Cruz';
+  List<Message> _sessionMessages = [];
 
   late AnimationController _iconController;
 
@@ -38,7 +38,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // Load messages for current session
   void _loadSessionMessages() {
     setState(() {
       _sessionMessages = conversations[_selectedContact] ?? [];
@@ -48,7 +47,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Future<void> _startListening() async {
     bool available = await _speech.initialize();
     if (available && !_speech.isListening) {
-      // Added isListening check
       setState(() => _isListening = true);
       _speech.listen(
         onResult: (result) {
@@ -64,15 +62,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               isUser: true,
             );
 
-            // Add to session messages
             setState(() {
               _sessionMessages.add(newMessage);
             });
 
-            // Save to global conversations
             addMessageToConversation(_selectedContact, newMessage);
 
-            // Clear output after 2 seconds but keep in messages list
             Future.delayed(Duration(seconds: 2), () {
               if (mounted) setState(() => _outputText = '');
             });
@@ -94,19 +89,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     final newMessage = Message(text: phrase, isUser: true);
 
-    // Add to session messages
     setState(() {
       _sessionMessages.add(newMessage);
     });
 
-    // Save to global conversations
     addMessageToConversation(_selectedContact, newMessage);
 
     await _flutterTts.setLanguage("tl-PH");
     await _flutterTts.setPitch(1.0);
     await _flutterTts.speak(phrase);
 
-    // Clear output after speaking but keep in messages list
     Future.delayed(Duration(seconds: 2), () {
       if (mounted) setState(() => _outputText = '');
     });
@@ -122,16 +114,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildMessagesList() {
-    if (_sessionMessages.isEmpty) {
-      return SizedBox.shrink();
-    }
+    if (_sessionMessages.isEmpty) return SizedBox.shrink();
 
     return Container(
-      height: 100, // Reduced height to prevent overflow
+      height: 100,
       margin: EdgeInsets.only(bottom: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min, // Added this
+        mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -145,10 +135,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
           Flexible(
-            // Changed from Expanded to Flexible
             child: ListView.builder(
               padding: EdgeInsets.symmetric(horizontal: 20),
-              shrinkWrap: true, // Added this
+              shrinkWrap: true,
               itemCount: _sessionMessages.length > 3
                   ? 3
                   : _sessionMessages.length,
@@ -184,13 +173,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       width: double.infinity,
       margin: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       padding: EdgeInsets.all(16),
-      constraints: BoxConstraints(maxHeight: 80), // Added height constraint
+      constraints: BoxConstraints(maxHeight: 80),
       decoration: BoxDecoration(
         color: Colors.white24,
         borderRadius: BorderRadius.circular(16),
       ),
       child: SingleChildScrollView(
-        // Added scrolling for long text
         child: Text(
           _outputText.isEmpty
               ? (_isMicMode
@@ -232,11 +220,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: GestureDetector(
         onTap: _isListening ? _stopListening : _startListening,
         child: CircleAvatar(
-          radius: 60, // Reduced size
+          radius: 60,
           backgroundColor: Colors.yellow,
           child: Icon(
             _isListening ? Icons.mic_off : Icons.mic,
-            size: 60, // Reduced size
+            size: 60,
             color: Colors.black,
           ),
         ),
@@ -270,7 +258,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         );
       },
       child: CircleAvatar(
-        radius: 60, // Reduced size
+        radius: 60,
         backgroundColor: Colors.yellow,
         child: Icon(Icons.back_hand, size: 60, color: Colors.black),
       ),
@@ -279,36 +267,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildMicMode() {
     return Flexible(
-      // Changed from Expanded to Flexible
       child: SingleChildScrollView(
-        // Added scroll capability
         padding: EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min, // Added this
+          mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(height: 20),
-
-            // Messages list
             _buildMessagesList(),
-
-            // Output bubble
             _buildOutputBubble(),
-
             SizedBox(height: 20),
-
-            // Mic icon
             _buildMicIcon(),
-
             SizedBox(height: 16),
-
-            // Status text
             Text(
               _isListening ? 'Listening... Speak now' : 'Tap to Start Speaking',
               style: TextStyle(color: Colors.white70, fontSize: 16),
             ),
-
-            SizedBox(height: 40), // Bottom padding
+            SizedBox(height: 40),
           ],
         ),
       ),
@@ -317,30 +292,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildFslMode() {
     return Flexible(
-      // Changed from Expanded to Flexible
       child: SingleChildScrollView(
-        // Added scroll capability
         padding: EdgeInsets.symmetric(horizontal: 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min, // Added this
+          mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(height: 20),
-
-            // Messages list
             _buildMessagesList(),
-
-            // Output bubble
             _buildOutputBubble(),
-
             SizedBox(height: 20),
-
-            // FSL icon
             _buildFslIcon(),
-
             SizedBox(height: 16),
-
-            // Start translate button
             ElevatedButton(
               onPressed: () => _speak("Maghanda para sa pagsasalin"),
               style: ElevatedButton.styleFrom(
@@ -352,12 +315,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 style: TextStyle(color: Colors.black, fontSize: 16),
               ),
             ),
-
             SizedBox(height: 16),
-
-            // Demo buttons - wrapped in flexible container
             Container(
-              constraints: BoxConstraints(maxHeight: 120), // Constrain height
+              constraints: BoxConstraints(maxHeight: 120),
               child: SingleChildScrollView(
                 child: Wrap(
                   spacing: 12,
@@ -372,8 +332,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-
-            SizedBox(height: 40), // Bottom padding
+            SizedBox(height: 40),
           ],
         ),
       ),
@@ -398,7 +357,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            iconSize: 32, // Reduced size
+            iconSize: 32,
             onPressed: _toggleMode,
             tooltip: _isMicMode ? 'Switch to FSL Mode' : 'Switch to MIC Mode',
             icon: AnimatedSwitcher(
@@ -426,7 +385,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        automaticallyImplyLeading: false, // Remove back button
+        automaticallyImplyLeading: false,
         title: Text('Tinig-Kamay Chat', style: TextStyle(color: Colors.white)),
         actions: [_buildToggleButton()],
       ),

@@ -22,7 +22,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void logout() {
-    // Simulated logout function
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -55,8 +54,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             SizedBox(height: 30),
-
-            // 🔗 Bluetooth Section
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -76,10 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
-
             Divider(color: Colors.white54, height: 40),
-
-            // 👥 Contacts
             ListTile(
               leading: Icon(Icons.contacts, color: Colors.white),
               title: Text(
@@ -87,14 +81,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(color: Colors.white),
               ),
               onTap: () {
-                // Simulated contact management
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Opening contact manager...')),
                 );
               },
             ),
-
-            // 🌐 Language
             ListTile(
               leading: Icon(Icons.language, color: Colors.white),
               title: Text(
@@ -107,8 +98,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 activeColor: Colors.yellow,
               ),
             ),
-
-            // 🚪 Logout
             ListTile(
               leading: Icon(Icons.logout, color: Colors.white),
               title: Text('Logout', style: TextStyle(color: Colors.white)),

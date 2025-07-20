@@ -15,33 +15,27 @@ class TinigKamayApp extends StatelessWidget {
       title: 'Tinig-Kamay',
       theme: ThemeData(
         primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Color(0xFF083D77), // dark blue
-        fontFamily: 'Arial', // or use custom font
+        scaffoldBackgroundColor: Color(0xFF083D77),
+        fontFamily: 'Arial',
       ),
       home: HomeScreen(),
       debugShowCheckedModeBanner: false,
-      // Define named routes
       routes: {
         '/home': (context) => HomeScreen(),
-        '/chat': (context) => HomeScreen(initialIndex: 0), // Go to Chat tab
-        '/history': (context) =>
-            HomeScreen(initialIndex: 1), // Go to History tab
-        '/settings': (context) =>
-            HomeScreen(initialIndex: 2), // Go to Settings tab
+        '/chat': (context) => HomeScreen(initialIndex: 0),
+        '/history': (context) => HomeScreen(initialIndex: 1),
+        '/settings': (context) => HomeScreen(initialIndex: 2),
       },
-      // Handle route generation for complex navigation
       onGenerateRoute: (settings) {
-        switch (settings.name) {
-          case '/conversation':
-            final args = settings.arguments as Map<String, dynamic>?;
-            return MaterialPageRoute(
-              builder: (context) => ConversationDetailScreen(
-                contactName: args?['contactName'] ?? 'Unknown',
-              ),
-            );
-          default:
-            return null;
+        if (settings.name == '/conversation') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          return MaterialPageRoute(
+            builder: (context) => ConversationDetailScreen(
+              contactName: args?['contactName'] ?? 'Unknown',
+            ),
+          );
         }
+        return null;
       },
     );
   }
@@ -59,8 +53,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late int _selectedIndex;
 
-  static List<Widget> _widgetOptions = <Widget>[
-    ChatScreen(), // ✅ Replaces SpeechToText + FSL screens
+  static final List<Widget> _widgetOptions = [
+    ChatScreen(),
     HistoryScreen(),
     SettingsScreen(),
   ];
@@ -77,7 +71,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // Handle navigation from other screens
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -91,18 +84,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        // Use IndexedStack to maintain state
-        index: _selectedIndex,
-        children: _widgetOptions,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: _widgetOptions),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.yellow,
         unselectedItemColor: Colors.white,
         backgroundColor: Color(0xFF062e5c),
         onTap: _onItemTapped,
-        type: BottomNavigationBarType.fixed, // Ensure all tabs are visible
+        type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.mic), label: 'Chat'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
