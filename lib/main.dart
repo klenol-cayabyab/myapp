@@ -3,6 +3,7 @@ import 'screens/chat_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/conversation_detail_screen.dart';
+import 'screens/login_screen.dart';
 
 void main() {
   runApp(TinigKamayApp());
@@ -18,13 +19,14 @@ class TinigKamayApp extends StatelessWidget {
         scaffoldBackgroundColor: Color(0xFF083D77),
         fontFamily: 'Arial',
       ),
-      home: HomeScreen(),
       debugShowCheckedModeBanner: false,
+      initialRoute: '/login',
       routes: {
-        '/home': (context) => HomeScreen(),
-        '/chat': (context) => HomeScreen(initialIndex: 0),
-        '/history': (context) => HomeScreen(initialIndex: 1),
-        '/settings': (context) => HomeScreen(initialIndex: 2),
+        '/login': (context) => const LoginScreen(),
+        '/home': (context) => const HomeScreen(),
+        '/chat': (context) => const HomeScreen(initialIndex: 0),
+        '/history': (context) => const HomeScreen(initialIndex: 1),
+        '/settings': (context) => const HomeScreen(initialIndex: 2),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/conversation') {
