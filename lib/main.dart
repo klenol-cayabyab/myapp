@@ -24,11 +24,15 @@ class TinigKamayApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginScreen(),
         '/home': (context) => const HomeScreen(),
-        '/chat': (context) => const HomeScreen(initialIndex: 0),
-        '/history': (context) => const HomeScreen(initialIndex: 1),
-        '/settings': (context) => const HomeScreen(initialIndex: 2),
       },
       onGenerateRoute: (settings) {
+        if (settings.name == '/chat') {
+          final args = settings.arguments as Map<String, dynamic>?;
+          return MaterialPageRoute(
+            builder: (context) =>
+                ChatScreen(selectedContact: args?['contactName'] ?? 'Unknown'),
+          );
+        }
         if (settings.name == '/conversation') {
           final args = settings.arguments as Map<String, dynamic>?;
           return MaterialPageRoute(
@@ -55,12 +59,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late int _selectedIndex;
 
-  static final List<Widget> _widgetOptions = [
-    ChatScreen(),
-    HistoryScreen(),
-    SettingsScreen(),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -86,7 +84,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _selectedIndex, children: _widgetOptions),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          ChatScreen(selectedContact: 'Default Contact'),
+          HistoryScreen(),
+          SettingsScreen(),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.yellow,
