@@ -23,7 +23,10 @@ class TinigKamayApp extends StatelessWidget {
       initialRoute: '/login',
       routes: {
         '/login': (context) => const LoginScreen(),
+        '/': (context) => const HomeScreen(), // Added root route
         '/home': (context) => const HomeScreen(),
+        '/history': (context) => const HomeScreen(initialIndex: 1),
+        '/settings': (context) => const HomeScreen(initialIndex: 2),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/chat') {
