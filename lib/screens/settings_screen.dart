@@ -143,13 +143,39 @@ class _SettingsScreenState extends State<SettingsScreen>
                     },
                   ),
                 ),
-                const SizedBox(height: 20), // Add bottom padding
+                const SizedBox(height: 20),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  void navigateToManageContacts() {
+    // Navigate to history screen (which shows contacts/conversations)
+    Navigator.pushNamed(context, '/history');
+
+    // Show confirmation snackbar
+    if (mounted) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.contacts, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text('Opening contact history...'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      });
+    }
   }
 
   void logout() {
@@ -569,7 +595,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(color: Colors.white),
                                   ),
                                   subtitle: const Text(
-                                    'Add or edit emergency contacts',
+                                    'View conversation history and contacts',
                                     style: TextStyle(color: Colors.white70),
                                   ),
                                   trailing: const Icon(
@@ -577,20 +603,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     color: Colors.white54,
                                     size: 16,
                                   ),
-                                  onTap: () {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text(
-                                            'Opening contact manager...',
-                                          ),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    }
-                                  },
+                                  onTap: navigateToManageContacts,
                                 ),
                                 const Divider(color: Colors.white24),
                                 ListTile(
