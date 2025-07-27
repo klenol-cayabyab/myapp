@@ -17,8 +17,11 @@ dependencies:
 
   cupertino_icons: 1.0.8
   flutter_tts: 3.8.5         
-  speech_to_text: 6.6.2     
   shared_preferences: 2.2.2
+  speech_to_text: ^6.3.0
+  record: ^4.4.4
+  camera: ^0.10.5+5
+  path_provider: ^2.1.1
 
 dev_dependencies:
   flutter_test:
