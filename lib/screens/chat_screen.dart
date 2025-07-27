@@ -5,31 +5,84 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/message_model.dart';
+import 'conversation_detail_screen.dart';
+
+class Message {
+  final String text;
+  final bool isUser;
+  final DateTime timestamp;
+  final String type;
+
+  Message({
+    required this.text,
+    required this.isUser,
+    required this.timestamp,
+    required this.type,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'text': text,
+    'isUser': isUser,
+    'timestamp': timestamp.millisecondsSinceEpoch,
+    'type': type,
+    'id': '${timestamp.millisecondsSinceEpoch}_${text.hashCode}',
+  };
+
+  static Message fromJson(Map<String, dynamic> json) => Message(
+    text: json['text'] ?? '',
+    isUser: json['isUser'] ?? true,
+    timestamp: DateTime.fromMillisecondsSinceEpoch(
+      json['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
+    ),
+    type: json['type'] ?? 'text',
+  );
+}
 
 class ChatScreen extends StatefulWidget {
   final String selectedContact;
+  final String? initialMode;
+  final Function(String)? onContactChange;
 
-  const ChatScreen({Key? key, required this.selectedContact}) : super(key: key);
+  const ChatScreen({
+    super.key,
+    required this.selectedContact,
+    this.initialMode,
+    this.onContactChange,
+  });
 
   @override
   _ChatScreenState createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
+  // Controllers - Made non-nullable for better memory management
   late stt.SpeechToText _speech;
-  final FlutterTts _flutterTts = FlutterTts();
-
-  bool _isListening = false;
-  bool _isMicMode = true;
-  String _outputText = '';
-  List<Message> _sessionMessages = [];
-  double _voiceLevel = 0.0;
-
+  late FlutterTts _flutterTts;
+  late TextEditingController _textController;
   late AnimationController _iconController;
   late AnimationController _waveController;
   late AnimationController _pulseController;
   late AnimationController _typewriterController;
+  late AnimationController _slideController;
+
+  // State variables
+  bool _isListening = false;
+  bool _isMicMode = true;
+  bool _isTextMode = false;
+  String _outputText = '';
+  List<Message> _sessionMessages = [];
+  double _voiceLevel = 0.0;
+  String _selectedContact = '';
+  List<String> _availableContacts = [];
+  bool _isContactsLoading = true;
+  String? _expandedCategory;
+
+  //  color scheme
+  static const Color primaryDark = Color(0xFF0A1628);
+  static const Color primaryMedium = Color(0xFF1E3A5F);
+  static const Color primaryLight = Color(0xFF2D5A87);
+  static const Color accentColor = Color(0xFF00D4FF);
+  static const Color accentSecondary = Color(0xFF7C3AED);
 
   // FSL Categories
   final Map<String, List<String>> _fslCategories = {
@@ -44,87 +97,255 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     ],
   };
 
-  String? _expandedCategory;
-
   @override
   void initState() {
     super.initState();
-    _speech = stt.SpeechToText();
-    _initializeAnimations();
-    _loadContactMessages();
+    _initializeControllers();
+    _initializeComponents();
+    _setInitialMode();
+    _loadData();
   }
 
-  void _initializeAnimations() {
+  void _initializeControllers() {
+    _textController = TextEditingController();
     _iconController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 400),
     );
-
     _waveController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1500),
     )..repeat();
-
     _pulseController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 2000),
     );
-
     _typewriterController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1000),
     );
+    _slideController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+  }
+
+  void _initializeComponents() {
+    _speech = stt.SpeechToText();
+    _flutterTts = FlutterTts();
+    _selectedContact = widget.selectedContact;
+  }
+
+  void _setInitialMode() {
+    if (widget.initialMode == 'fsl') {
+      _isMicMode = false;
+      _isTextMode = false;
+    } else if (widget.initialMode == 'mic') {
+      _isMicMode = true;
+      _isTextMode = false;
+    } else {
+      _isTextMode = true;
+      _isMicMode = false;
+    }
+  }
+
+  Future<void> _loadData() async {
+    await _loadAvailableContacts();
+    if (mounted) {
+      await _loadContactMessages();
+      await _initializeSpeech();
+    }
   }
 
   @override
   void dispose() {
-    _iconController.dispose();
-    _waveController.dispose();
-    _pulseController.dispose();
+    // Dispose controllers in reverse order
+    _slideController.dispose();
     _typewriterController.dispose();
+    _pulseController.dispose();
+    _waveController.dispose();
+    _iconController.dispose();
+    _textController.dispose();
+
+    // Stop TTS and speech
+    _flutterTts.stop();
+    if (_isListening) {
+      _speech.stop();
+    }
+
     super.dispose();
   }
 
-  // Load messages for the specific contact from SharedPreferences
-  Future<void> _loadContactMessages() async {
+  Future<void> _initializeSpeech() async {
+    try {
+      bool available = await _speech.initialize(
+        onStatus: (status) {
+          if (mounted && status == 'notListening' && _isListening) {
+            setState(() => _isListening = false);
+            _pulseController.stop();
+            _pulseController.reset();
+          }
+        },
+        onError: (error) {
+          if (mounted && _isListening) {
+            _stopListening();
+          }
+        },
+      );
+      if (!available) {
+        debugPrint('Speech recognition not available');
+      }
+    } catch (e) {
+      debugPrint('Error initializing speech: $e');
+    }
+  }
+
+  Future<void> _loadAvailableContacts() async {
+    if (!mounted) return;
+
+    setState(() => _isContactsLoading = true);
+
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String key = 'messages_${widget.selectedContact}';
+      final String? conversationsJson = prefs.getString('conversations_list');
+
+      List<String> contacts = [
+        'Klenol Cayabyab',
+        'Gello Gadaingan',
+        'Lance Alog',
+        'Renz Atienza',
+        'Gian',
+        'Vhon',
+      ];
+
+      if (conversationsJson != null) {
+        final List<dynamic> conversationsList = json.decode(conversationsJson);
+        List<String> savedContacts = conversationsList
+            .map((conv) => conv['name'].toString())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList();
+
+        for (String savedContact in savedContacts) {
+          if (!contacts.contains(savedContact)) {
+            contacts.add(savedContact);
+          }
+        }
+      }
+
+      if (!contacts.contains(_selectedContact)) {
+        contacts.insert(0, _selectedContact);
+      }
+
+      if (mounted) {
+        setState(() {
+          _availableContacts = contacts;
+          _isContactsLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading contacts: $e');
+      if (mounted) {
+        setState(() {
+          _availableContacts = [_selectedContact];
+          _isContactsLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadContactMessages() async {
+    if (!mounted) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String key = 'messages_$_selectedContact';
       final String? messagesJson = prefs.getString(key);
 
-      if (messagesJson != null) {
+      if (messagesJson != null && mounted) {
         final List<dynamic> messagesList = json.decode(messagesJson);
         setState(() {
           _sessionMessages = messagesList
               .map((json) => Message.fromJson(json))
               .toList();
         });
+      } else if (mounted) {
+        setState(() => _sessionMessages = []);
       }
     } catch (e) {
-      print('Error loading messages: $e');
+      debugPrint('Error loading messages: $e');
+      if (mounted) {
+        setState(() => _sessionMessages = []);
+      }
     }
   }
 
-  // Save messages for the specific contact to SharedPreferences
   Future<void> _saveContactMessages() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String key = 'messages_${widget.selectedContact}';
+      final String key = 'messages_$_selectedContact';
       final String messagesJson = json.encode(
         _sessionMessages.map((message) => message.toJson()).toList(),
       );
       await prefs.setString(key, messagesJson);
+      await _updateConversationInHistory();
     } catch (e) {
-      print('Error saving messages: $e');
+      debugPrint('Error saving messages: $e');
     }
   }
 
-  // Add a new message and save to SharedPreferences
-  Future<void> _addMessage(String text, bool isUser) async {
+  Future<void> _updateConversationInHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? conversationsJson = prefs.getString('conversations_list');
+
+      List<dynamic> conversations = [];
+      if (conversationsJson != null) {
+        conversations = json.decode(conversationsJson);
+      }
+
+      int index = conversations.indexWhere(
+        (conv) => conv['name'] == _selectedContact,
+      );
+
+      if (_sessionMessages.isNotEmpty) {
+        final lastMessage = _sessionMessages.last;
+        final conversationData = {
+          'name': _selectedContact,
+          'preview': lastMessage.text,
+          'time': _getCurrentTime(),
+          'messageCount': _sessionMessages.length,
+          'lastMessageType': lastMessage.type,
+        };
+
+        if (index != -1) {
+          conversations[index] = conversationData;
+          final updatedConversation = conversations.removeAt(index);
+          conversations.insert(0, updatedConversation);
+        } else {
+          conversations.insert(0, conversationData);
+        }
+
+        await prefs.setString('conversations_list', json.encode(conversations));
+      }
+    } catch (e) {
+      debugPrint('Error updating conversation: $e');
+    }
+  }
+
+  String _getCurrentTime() {
+    final now = DateTime.now();
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _addMessage(String text, bool isUser, String messageType) async {
+    if (text.trim().isEmpty || !mounted) return;
+
     final newMessage = Message(
-      text: text,
+      text: text.trim(),
       isUser: isUser,
       timestamp: DateTime.now(),
+      type: messageType,
     );
 
     setState(() {
@@ -132,31 +353,94 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
 
     await _saveContactMessages();
+    if (mounted) {
+      _showMessageSent(messageType);
+    }
+  }
+
+  void _showMessageSent(String messageType) {
+    if (!mounted) return;
+
+    Color color;
+    IconData icon;
+    String label;
+
+    switch (messageType) {
+      case 'voice':
+        color = accentColor;
+        icon = Icons.mic_rounded;
+        label = 'Voice';
+        break;
+      case 'fsl':
+        color = accentSecondary;
+        icon = Icons.sign_language_rounded;
+        label = 'FSL';
+        break;
+      default:
+        color = Colors.green;
+        icon = Icons.message_rounded;
+        label = 'Text';
+        break;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                '$label message sent to $_selectedContact',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(milliseconds: 1500),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _sendTextMessage() {
+    final text = _textController.text.trim();
+    if (text.isNotEmpty) {
+      _addMessage(text, true, 'text');
+      _textController.clear();
+    }
   }
 
   Future<void> _startListening() async {
-    bool available = await _speech.initialize();
-    if (available && !_speech.isListening) {
+    if (!mounted || !_speech.isAvailable) return;
+
+    if (!_speech.isListening) {
       setState(() => _isListening = true);
       _pulseController.repeat();
-
-      // Haptic feedback
       HapticFeedback.lightImpact();
 
-      _speech.listen(
+      await _speech.listen(
         onResult: (result) {
+          if (!mounted) return;
+
           if (result.recognizedWords.isNotEmpty) {
-            setState(() {
-              _outputText = result.recognizedWords;
-            });
+            setState(() => _outputText = result.recognizedWords);
             _typewriterController.forward();
           }
 
           if (result.finalResult) {
-            _addMessage(result.recognizedWords, true);
+            _addMessage(result.recognizedWords, true, 'voice');
             _stopListening();
 
-            Future.delayed(Duration(seconds: 3), () {
+            Future.delayed(const Duration(seconds: 1), () {
               if (mounted) {
                 setState(() => _outputText = '');
                 _typewriterController.reset();
@@ -165,16 +449,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           }
         },
         partialResults: true,
-        listenMode: stt.ListenMode.dictation,
+        listenMode: stt.ListenMode.confirmation,
+        cancelOnError: false,
+        pauseFor: const Duration(seconds: 5),
+        listenFor: const Duration(seconds: 60),
+        localeId: 'en_US',
         onSoundLevelChange: (level) {
-          setState(() => _voiceLevel = level.clamp(0.0, 1.0));
+          if (mounted) {
+            setState(() => _voiceLevel = level.clamp(0.0, 1.0));
+          }
         },
       );
     }
   }
 
   void _stopListening() {
-    setState(() => _isListening = false);
+    if (mounted) {
+      setState(() => _isListening = false);
+    }
     _speech.stop();
     _pulseController.stop();
     _pulseController.reset();
@@ -182,18 +474,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _speak(String phrase) async {
-    HapticFeedback.selectionClick();
+    if (!mounted) return;
 
+    HapticFeedback.selectionClick();
     setState(() => _outputText = phrase);
     _typewriterController.forward();
 
-    await _addMessage(phrase, true);
+    await _addMessage(phrase, true, 'fsl');
 
-    await _flutterTts.setLanguage("tl-PH");
-    await _flutterTts.setPitch(1.0);
-    await _flutterTts.speak(phrase);
+    try {
+      await _flutterTts.setLanguage("tl-PH");
+      await _flutterTts.setPitch(1.0);
+      await _flutterTts.speak(phrase);
+    } catch (e) {
+      debugPrint('TTS Error: $e');
+    }
 
-    Future.delayed(Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 1), () {
       if (mounted) {
         setState(() => _outputText = '');
         _typewriterController.reset();
@@ -202,8 +499,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _toggleMode() {
+    if (!mounted) return;
+
     setState(() {
-      _isMicMode = !_isMicMode;
+      if (_isTextMode) {
+        _isTextMode = false;
+        _isMicMode = true;
+      } else if (_isMicMode) {
+        _isMicMode = false;
+        _isTextMode = false;
+      } else {
+        _isTextMode = true;
+        _isMicMode = false;
+      }
+
       _iconController.forward(from: 0);
       _outputText = '';
       _expandedCategory = null;
@@ -212,159 +521,132 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     HapticFeedback.mediumImpact();
   }
 
-  Widget _buildVoiceWaveAnimation() {
-    return AnimatedBuilder(
-      animation: _waveController,
-      builder: (context, child) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(5, (index) {
-            final delay = index * 0.2;
-            final animValue = (_waveController.value + delay) % 1.0;
-            final height =
-                (20 +
-                        30 *
-                            _voiceLevel *
-                            (0.5 + 0.5 * math.sin(animValue * 2 * math.pi)))
-                    .clamp(10.0, 50.0);
+  Widget _buildContactSelector() {
+    if (_isContactsLoading) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Colors.white.withOpacity(0.15),
+              Colors.white.withOpacity(0.05),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                'Loading contacts...',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
-            return Container(
-              margin: EdgeInsets.symmetric(horizontal: 2),
-              width: 4,
-              height: height,
-              decoration: BoxDecoration(
-                color: Colors.yellow.shade300,
-                borderRadius: BorderRadius.circular(2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.yellow.withOpacity(0.3),
-                    blurRadius: 4,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withOpacity(0.15),
+            Colors.white.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _availableContacts.contains(_selectedContact)
+              ? _selectedContact
+              : null,
+          dropdownColor: primaryMedium,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+          icon: Icon(
+            Icons.keyboard_arrow_down,
+            color: Colors.white.withOpacity(0.7),
+          ),
+          isExpanded: true,
+          items: _availableContacts.map((contact) {
+            return DropdownMenuItem<String>(
+              value: contact,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [accentColor, accentSecondary],
+                      ),
+                      borderRadius: BorderRadius.all(Radius.circular(16)),
+                    ),
+                    child: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: Colors.transparent,
+                      child: Text(
+                        contact.isNotEmpty ? contact[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      contact,
+                      style: const TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
             );
-          }),
-        );
-      },
-    );
-  }
-
-  Widget _buildMessagesList() {
-    if (_sessionMessages.isEmpty) return SizedBox.shrink();
-
-    return Container(
-      height: 140,
-      margin: EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            child: Row(
-              children: [
-                Text(
-                  'Recent Messages',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                Spacer(),
-                Text(
-                  '${_sessionMessages.length} messages',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              scrollDirection: Axis.vertical,
-              reverse: true,
-              itemCount: _sessionMessages.length > 3
-                  ? 3
-                  : _sessionMessages.length,
-              itemBuilder: (context, index) {
-                final message =
-                    _sessionMessages[_sessionMessages.length - 1 - index];
-                return Container(
-                  margin: EdgeInsets.only(bottom: 8),
-                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withOpacity(0.15),
-                        Colors.white.withOpacity(0.05),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.1),
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message.text,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (message.timestamp != null) ...[
-                        SizedBox(height: 4),
-                        Text(
-                          _formatTimestamp(message.timestamp!),
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.5),
-                            fontSize: 10,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+          }).toList(),
+          onChanged: (String? newContact) {
+            if (newContact != null &&
+                newContact != _selectedContact &&
+                mounted) {
+              setState(() => _selectedContact = newContact);
+              _loadContactMessages();
+              // Notify parent about contact change
+              if (widget.onContactChange != null) {
+                widget.onContactChange!(newContact);
+              }
+              HapticFeedback.selectionClick();
+            }
+          },
+        ),
       ),
     );
-  }
-
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
-
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
-    } else {
-      return '${difference.inDays}d ago';
-    }
   }
 
   Widget _buildModernOutputBubble() {
     return Container(
       width: double.infinity,
-      margin: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      padding: EdgeInsets.all(20),
-      constraints: BoxConstraints(minHeight: 80, maxHeight: 120),
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.all(20),
+      constraints: const BoxConstraints(minHeight: 80, maxHeight: 120),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -376,23 +658,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 20,
-            offset: Offset(0, 10),
-          ),
-        ],
       ),
       child: Center(
         child: AnimatedSwitcher(
-          duration: Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 300),
           child: _outputText.isEmpty
               ? Text(
-                  _isMicMode
+                  _isTextMode
+                      ? 'Type your message below...'
+                      : _isMicMode
                       ? 'Tap the mic to start speaking...'
                       : 'Select a phrase to translate...',
-                  key: ValueKey('placeholder'),
+                  key: const ValueKey('placeholder'),
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white.withOpacity(0.7),
@@ -408,16 +685,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       (_outputText.length * _typewriterController.value)
                           .round(),
                     );
+
                     return Text(
                       displayText,
-                      key: ValueKey('output'),
-                      style: TextStyle(
+                      key: const ValueKey('output'),
+                      style: const TextStyle(
                         fontSize: 18,
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
                         height: 1.4,
                       ),
                       textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 3,
                     );
                   },
                 ),
@@ -436,16 +716,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             boxShadow: _isListening
                 ? [
                     BoxShadow(
-                      color: Colors.yellow.withOpacity(0.4),
+                      color: accentColor.withOpacity(0.4),
                       blurRadius: 20 + 10 * _pulseController.value,
                       spreadRadius: 5 + 15 * _pulseController.value,
                     ),
                   ]
                 : [
                     BoxShadow(
-                      color: Colors.yellow.withOpacity(0.3),
+                      color: accentColor.withOpacity(0.3),
                       blurRadius: 15,
-                      offset: Offset(0, 8),
+                      offset: const Offset(0, 8),
                     ),
                   ],
           ),
@@ -457,26 +737,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               child: Container(
                 width: 160,
                 height: 160,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.yellow.shade300, Colors.yellow.shade600],
+                    colors: [accentColor, accentSecondary],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 3,
-                  ),
                 ),
                 child: Center(
                   child: AnimatedSwitcher(
-                    duration: Duration(milliseconds: 200),
+                    duration: const Duration(milliseconds: 200),
                     child: Icon(
                       _isListening ? Icons.mic_off_rounded : Icons.mic_rounded,
                       key: ValueKey(_isListening),
                       size: 64,
-                      color: Colors.black87,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -490,36 +766,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildModernFSLButton() {
     return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.yellow.withOpacity(0.3),
-            blurRadius: 15,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Container(
-        width: 160,
-        height: 160,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.yellow.shade300, Colors.yellow.shade600],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.3), width: 3),
+      width: 160,
+      height: 160,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [accentSecondary, accentColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        child: Icon(Icons.back_hand_rounded, size: 64, color: Colors.black87),
+        shape: BoxShape.circle,
       ),
+      child: const Icon(Icons.back_hand_rounded, size: 64, color: Colors.white),
     );
   }
 
   Widget _buildCategorizedPhrases() {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         children: _fslCategories.entries.map((entry) {
           final category = entry.key;
@@ -527,7 +790,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           final isExpanded = _expandedCategory == category;
 
           return Container(
-            margin: EdgeInsets.only(bottom: 12),
+            margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -547,35 +810,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: () {
-                      setState(() {
-                        _expandedCategory = isExpanded ? null : category;
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _expandedCategory = isExpanded ? null : category;
+                        });
+                      }
                       HapticFeedback.selectionClick();
                     },
                     borderRadius: BorderRadius.circular(16),
                     child: Padding(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       child: Row(
                         children: [
                           Icon(
                             _getCategoryIcon(category),
-                            color: Colors.yellow.shade300,
+                            color: accentSecondary,
                             size: 24,
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               category,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           AnimatedRotation(
                             turns: isExpanded ? 0.5 : 0,
-                            duration: Duration(milliseconds: 200),
+                            duration: const Duration(milliseconds: 200),
                             child: Icon(
                               Icons.keyboard_arrow_down_rounded,
                               color: Colors.white.withOpacity(0.7),
@@ -587,12 +853,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 AnimatedContainer(
-                  duration: Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
                   height: isExpanded ? null : 0,
                   child: isExpanded
                       ? Padding(
-                          padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           child: Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -633,25 +899,335 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         onTap: () => _speak(phrase),
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Colors.yellow.withOpacity(0.2),
-                Colors.yellow.withOpacity(0.1),
+                accentSecondary.withOpacity(0.2),
+                accentSecondary.withOpacity(0.1),
               ],
             ),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.yellow.withOpacity(0.3), width: 1),
+            border: Border.all(
+              color: accentSecondary.withOpacity(0.3),
+              width: 1,
+            ),
           ),
           child: Text(
             phrase,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
+            overflow: TextOverflow.ellipsis,
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceWaveAnimation() {
+    return AnimatedBuilder(
+      animation: _waveController,
+      builder: (context, child) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(5, (index) {
+            final delay = index * 0.2;
+            final animValue = (_waveController.value + delay) % 1.0;
+            final height =
+                (20 +
+                        30 *
+                            _voiceLevel *
+                            (0.5 + 0.5 * math.sin(animValue * 2 * math.pi)))
+                    .clamp(10.0, 50.0);
+
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              width: 4,
+              height: height,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+
+  Widget _buildMessagesList() {
+    if (_sessionMessages.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 140,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Recent Messages - $_selectedContact',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ConversationDetailScreen(
+                        contactName: _selectedContact,
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: accentColor.withOpacity(0.3)),
+                    ),
+                    child: const Text(
+                      'View All',
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              scrollDirection: Axis.vertical,
+              reverse: true,
+              itemCount: _sessionMessages.length > 3
+                  ? 3
+                  : _sessionMessages.length,
+              itemBuilder: (context, index) {
+                final message =
+                    _sessionMessages[_sessionMessages.length - 1 - index];
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.15),
+                        Colors.white.withOpacity(0.05),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _buildMessageTypeIcon(message.type),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              message.text,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _formatTimestamp(message.timestamp),
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.5),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageTypeIcon(String type) {
+    IconData icon;
+    Color color;
+
+    switch (type) {
+      case 'voice':
+        icon = Icons.mic_rounded;
+        color = accentColor;
+        break;
+      case 'fsl':
+        icon = Icons.sign_language_rounded;
+        color = accentSecondary;
+        break;
+      default:
+        icon = Icons.message_rounded;
+        color = Colors.grey;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Icon(icon, size: 12, color: color),
+    );
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
+  Widget _buildTextMode() {
+    return Expanded(
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          children: [
+            _buildContactSelector(),
+            _buildMessagesList(),
+            _buildModernOutputBubble(),
+            const SizedBox(height: 30),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.15),
+                    Colors.white.withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _textController,
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                    maxLines: 3,
+                    minLines: 1,
+                    decoration: InputDecoration(
+                      hintText: 'Type your message here...',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 16,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                    onChanged: (text) {
+                      if (mounted) {
+                        setState(() => _outputText = text);
+                      }
+                    },
+                    onSubmitted: (_) => _sendTextMessage(),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [accentColor, accentSecondary],
+                          ),
+                          borderRadius: BorderRadius.all(Radius.circular(25)),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _sendTextMessage,
+                            borderRadius: BorderRadius.circular(25),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.send_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Send',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
+          ],
         ),
       ),
     );
@@ -660,28 +1236,25 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildMicMode() {
     return Expanded(
       child: SingleChildScrollView(
-        physics: BouncingScrollPhysics(),
+        physics: const BouncingScrollPhysics(),
         child: Column(
           children: [
-            SizedBox(height: 20),
+            _buildContactSelector(),
             _buildMessagesList(),
             _buildModernOutputBubble(),
-
             if (_isListening) ...[
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               _buildVoiceWaveAnimation(),
             ],
-
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
             _buildModernMicButton(),
-            SizedBox(height: 20),
-
+            const SizedBox(height: 20),
             AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 300),
               child: Text(
                 _isListening
                     ? 'Listening... Speak now'
-                    : 'Tap the microphone to start',
+                    : 'Tap the microphone to start recording',
                 key: ValueKey(_isListening),
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.8),
@@ -692,7 +1265,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 textAlign: TextAlign.center,
               ),
             ),
-            SizedBox(height: 40),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -702,16 +1275,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   Widget _buildFslMode() {
     return Expanded(
       child: SingleChildScrollView(
-        physics: BouncingScrollPhysics(),
+        physics: const BouncingScrollPhysics(),
         child: Column(
           children: [
-            SizedBox(height: 20),
+            _buildContactSelector(),
             _buildMessagesList(),
             _buildModernOutputBubble(),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             _buildModernFSLButton(),
-            SizedBox(height: 20),
-
+            const SizedBox(height: 20),
             Text(
               'Choose a phrase to translate',
               style: TextStyle(
@@ -721,10 +1293,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 letterSpacing: 0.5,
               ),
             ),
-
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
             _buildCategorizedPhrases(),
-            SizedBox(height: 40),
+            const SizedBox(height: 40),
           ],
         ),
       ),
@@ -732,49 +1303,58 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildModernToggleButton() {
+    String currentMode = _isTextMode
+        ? 'TEXT'
+        : _isMicMode
+        ? 'MIC'
+        : 'FSL';
+    IconData currentIcon = _isTextMode
+        ? Icons.keyboard_rounded
+        : _isMicMode
+        ? Icons.mic_rounded
+        : Icons.sign_language_rounded;
+
     return Container(
-      margin: EdgeInsets.only(right: 16, top: 8),
+      margin: const EdgeInsets.only(right: 16, top: 8),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: _toggleMode,
           borderRadius: BorderRadius.circular(20),
           child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.yellow.withOpacity(0.2),
-                  Colors.yellow.withOpacity(0.1),
+                  accentColor.withOpacity(0.2),
+                  accentSecondary.withOpacity(0.2),
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.yellow.withOpacity(0.3),
-                width: 1,
-              ),
+              border: Border.all(color: accentColor.withOpacity(0.3), width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 AnimatedSwitcher(
-                  duration: Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 300),
                   child: Icon(
-                    _isMicMode ? Icons.back_hand_rounded : Icons.mic_rounded,
-                    key: ValueKey(_isMicMode),
-                    color: Colors.yellow.shade300,
+                    currentIcon,
+                    key: ValueKey(currentMode),
+                    color: accentColor,
                     size: 20,
                   ),
                 ),
-                SizedBox(width: 6),
+                const SizedBox(width: 6),
                 Text(
-                  _isMicMode ? 'FSL' : 'MIC',
+                  currentMode,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -786,66 +1366,69 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Color(0xFF0A1A2E),
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [primaryDark, primaryMedium, primaryLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Color(0xFF0A1A2E).withOpacity(0.9),
-                Color(0xFF0A1A2E).withOpacity(0.7),
-                Colors.transparent,
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-          ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Tinig-Kamay Chat',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
-            ),
-            Text(
-              widget.selectedContact,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-        actions: [_buildModernToggleButton()],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  primaryDark.withOpacity(0.9),
+                  primaryDark.withOpacity(0.7),
+                  Colors.transparent,
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
           ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Tinig-Kamay Chat',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              Flexible(
+                child: Text(
+                  _selectedContact,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          actions: [_buildModernToggleButton()],
         ),
-        child: SafeArea(
+        body: SafeArea(
           child: Column(
             children: [
-              SizedBox(height: 10),
-              _isMicMode ? _buildMicMode() : _buildFslMode(),
+              const SizedBox(height: 10),
+              _isTextMode
+                  ? _buildTextMode()
+                  : _isMicMode
+                  ? _buildMicMode()
+                  : _buildFslMode(),
             ],
           ),
         ),

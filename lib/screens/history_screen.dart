@@ -2,662 +2,845 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'conversation_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  final Function(String, {String? mode})? onContactSelected;
+  final Function(String)? onConversationDetailRequested;
+
+  const HistoryScreen({
+    super.key,
+    this.onContactSelected,
+    this.onConversationDetailRequested,
+  });
 
   @override
-  _HistoryScreenState createState() => _HistoryScreenState();
+  State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends State<HistoryScreen>
-    with TickerProviderStateMixin {
-  List<Map<String, String>> conversations = [];
-  bool isLoading = true;
-  late AnimationController _fadeController;
-  late AnimationController _slideController;
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  List<Map<String, dynamic>> _conversations = [];
+  List<Map<String, dynamic>> _filteredConversations = [];
+  bool _isLoading = true;
+
+  final TextEditingController _searchController = TextEditingController();
+
+  // Enhanced color scheme
+  static const Color primaryDark = Color(0xFF0A1628);
+  static const Color primaryMedium = Color(0xFF1E3A5F);
+  static const Color primaryLight = Color(0xFF2D5A87);
+  static const Color accentColor = Color(0xFF00D4FF);
+  static const Color accentSecondary = Color(0xFF7C3AED);
+  static const Color successColor = Color(0xFF10B981);
+  static const Color warningColor = Color(0xFFF59E0B);
+  static const Color errorColor = Color(0xFFEF4444);
 
   @override
   void initState() {
     super.initState();
-    _initializeAnimations();
     _loadConversations();
-  }
-
-  void _initializeAnimations() {
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: 800),
-    );
-    _slideController = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: 600),
-    );
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
-    _fadeController.dispose();
-    _slideController.dispose();
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
     super.dispose();
   }
 
+  void _onSearchChanged() {
+    final query = _searchController.text.toLowerCase().trim();
+    if (mounted) {
+      setState(() {
+        if (query.isEmpty) {
+          _filteredConversations = List.from(_conversations);
+        } else {
+          _filteredConversations = _conversations.where((conversation) {
+            final name = conversation['name'].toString().toLowerCase();
+            final preview = conversation['preview'].toString().toLowerCase();
+            return name.contains(query) || preview.contains(query);
+          }).toList();
+        }
+      });
+    }
+  }
+
   Future<void> _loadConversations() async {
+    if (!mounted) return;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final String? conversationsJson = prefs.getString('conversations_list');
 
+      List<Map<String, dynamic>> loadedConversations = [];
+
       if (conversationsJson != null) {
         final List<dynamic> conversationsList = json.decode(conversationsJson);
-        setState(() {
-          conversations = conversationsList
-              .map((item) => Map<String, String>.from(item))
-              .toList();
-        });
+
+        for (var item in conversationsList) {
+          Map<String, dynamic> conversation = Map<String, dynamic>.from(item);
+          String contactName = conversation['name'];
+          Map<String, dynamic> messageInfo = await _getLastMessageInfo(
+            contactName,
+          );
+
+          conversation.addAll({
+            'messageCount': messageInfo['count'],
+            'lastMessageType': messageInfo['type'],
+            'hasVoiceMessages': messageInfo['hasVoice'],
+            'hasFSLMessages': messageInfo['hasFSL'],
+            'lastMessageTime': messageInfo['lastTime'],
+          });
+
+          loadedConversations.add(conversation);
+        }
       } else {
+        // Initialize with default contacts
+        loadedConversations = [
+          _createDefaultConversation('Klenol Cayabyab'),
+          _createDefaultConversation('Gello Gadaingan'),
+          _createDefaultConversation('Lance Alog'),
+          _createDefaultConversation('Renz Atienza'),
+          _createDefaultConversation('Gian'),
+          _createDefaultConversation('Vhon'),
+        ];
+        await _saveConversations(loadedConversations);
+      }
+
+      // Sort by last message time
+      loadedConversations.sort((a, b) {
+        final aTime = a['lastMessageTime'] ?? 0;
+        final bTime = b['lastMessageTime'] ?? 0;
+        return bTime.compareTo(aTime);
+      });
+
+      if (mounted) {
         setState(() {
-          conversations = [
-            {
-              'name': 'Klenol Cayabyab',
-              'preview': 'Kumusta ka na? Miss kita!',
-              'time': '2:15 PM',
-            },
-            {
-              'name': 'Gello Gadaingan',
-              'preview': 'Ang pogi ko',
-              'time': '11:30 AM',
-            },
-            {
-              'name': 'Lance Alog',
-              'preview': 'Pre Crush ko si alyssa',
-              'time': 'Yesterday',
-            },
-            {
-              'name': 'Renz Atienza',
-              'preview': 'Tol, tara bilyar',
-              'time': 'Yesterday',
-            },
-            {
-              'name': 'Gian',
-              'preview': 'Perfect Score nyo sa Presentation',
-              'time': 'Jul 20',
-            },
-            {
-              'name': 'Vhon',
-              'preview': 'Pasado kayo sa final Project sabi ni Sir',
-              'time': 'Jul 19',
-            },
-          ];
+          _conversations = loadedConversations;
+          _filteredConversations = List.from(loadedConversations);
+          _isLoading = false;
         });
-        _saveConversations();
-        await _initializeDefaultConversations();
       }
-
-      setState(() {
-        isLoading = false;
-      });
-
-      // Start animations
-      _fadeController.forward();
-      _slideController.forward();
     } catch (e) {
-      print('Error loading conversations: $e');
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _initializeDefaultConversations() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Define more realistic conversation threads
-    final Map<String, List<Map<String, dynamic>>> defaultConversationThreads = {
-      'Klenol Cayabyab': [
-        {
-          'text': 'Hello!',
-          'isUser': true,
-          'timestamp': DateTime.now()
-              .subtract(Duration(minutes: 30))
-              .millisecondsSinceEpoch,
-        },
-        {
-          'text': 'Kumusta ka na? Miss kita!',
-          'isUser': false,
-          'timestamp': DateTime.now()
-              .subtract(Duration(minutes: 15))
-              .millisecondsSinceEpoch,
-        },
-      ],
-      'Gello Gadaingan': [
-        {
-          'text': 'Pano ba yan?',
-          'isUser': true,
-          'timestamp': DateTime.now()
-              .subtract(Duration(hours: 1))
-              .millisecondsSinceEpoch,
-        },
-        {
-          'text': 'Ang pogi ko',
-          'isUser': false,
-          'timestamp': DateTime.now()
-              .subtract(Duration(minutes: 45))
-              .millisecondsSinceEpoch,
-        },
-      ],
-      'Lance Alog': [
-        {
-          'text': 'Pre may balita ako',
-          'isUser': true,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 1, hours: 2))
-              .millisecondsSinceEpoch,
-        },
-        {
-          'text': 'Pre Crush ko si alyssa',
-          'isUser': false,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 1, hours: 1))
-              .millisecondsSinceEpoch,
-        },
-      ],
-      'Renz Atienza': [
-        {
-          'text': 'Libre ka ba mamaya?',
-          'isUser': true,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 1, hours: 3))
-              .millisecondsSinceEpoch,
-        },
-        {
-          'text': 'Tol, tara bilyar',
-          'isUser': false,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 1, hours: 2))
-              .millisecondsSinceEpoch,
-        },
-      ],
-      'Gian': [
-        {
-          'text': 'Kumusta presentation namin?',
-          'isUser': true,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 2, hours: 1))
-              .millisecondsSinceEpoch,
-        },
-        {
-          'text': 'Perfect Score nyo sa Presentation',
-          'isUser': false,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 2))
-              .millisecondsSinceEpoch,
-        },
-      ],
-      'Vhon': [
-        {
-          'text': 'Sir ano na results ng final project?',
-          'isUser': true,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 3, hours: 2))
-              .millisecondsSinceEpoch,
-        },
-        {
-          'text': 'Pasado kayo sa final Project sabi ni Sir',
-          'isUser': false,
-          'timestamp': DateTime.now()
-              .subtract(Duration(days: 3, hours: 1))
-              .millisecondsSinceEpoch,
-        },
-      ],
-    };
-
-    for (var conversation in conversations) {
-      final contactName = conversation['name']!;
-      final messagesKey = 'messages_$contactName';
-
-      if (!prefs.containsKey(messagesKey)) {
-        final defaultMessages =
-            defaultConversationThreads[contactName] ??
-            [
-              {
-                'text': conversation['preview']!,
-                'isUser': false,
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              },
-            ];
-        await prefs.setString(messagesKey, json.encode(defaultMessages));
+      debugPrint('Error loading conversations: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showSnackBar('Failed to load conversations', errorColor);
       }
     }
   }
 
-  Future<void> _saveConversations() async {
+  Map<String, dynamic> _createDefaultConversation(String name) {
+    return {
+      'name': name,
+      'preview': 'No messages yet',
+      'time': 'New',
+      'messageCount': 0,
+      'lastMessageType': 'text',
+      'hasVoiceMessages': false,
+      'hasFSLMessages': false,
+      'lastMessageTime': 0,
+    };
+  }
+
+  Future<Map<String, dynamic>> _getLastMessageInfo(String contactName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? messagesJson = prefs.getString('messages_$contactName');
+
+      if (messagesJson != null && messagesJson.isNotEmpty) {
+        final List<dynamic> messagesList = json.decode(messagesJson);
+        List<Map<String, dynamic>> messages = messagesList
+            .cast<Map<String, dynamic>>()
+            .where(
+              (msg) =>
+                  msg['text'] != null &&
+                  msg['text'].toString().trim().isNotEmpty,
+            )
+            .toList();
+
+        if (messages.isNotEmpty) {
+          bool hasVoice = messages.any((msg) => msg['type'] == 'voice');
+          bool hasFSL = messages.any((msg) => msg['type'] == 'fsl');
+          String lastType = messages.last['type'] ?? 'text';
+          int lastTime = messages.last['timestamp'] ?? 0;
+
+          return {
+            'count': messages.length,
+            'type': lastType,
+            'hasVoice': hasVoice,
+            'hasFSL': hasFSL,
+            'lastTime': lastTime,
+          };
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting message info: $e');
+    }
+
+    return {
+      'count': 0,
+      'type': 'text',
+      'hasVoice': false,
+      'hasFSL': false,
+      'lastTime': 0,
+    };
+  }
+
+  Future<void> _saveConversations(
+    List<Map<String, dynamic>> conversations,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String conversationsJson = json.encode(conversations);
       await prefs.setString('conversations_list', conversationsJson);
     } catch (e) {
-      print('Error saving conversations: $e');
+      debugPrint('Error saving conversations: $e');
     }
   }
 
   Future<void> _addNewConversation() async {
     HapticFeedback.lightImpact();
     final TextEditingController nameController = TextEditingController();
-    final TextEditingController messageController = TextEditingController();
 
-    final result = await showDialog<Map<String, String>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Color(0xFF16213E),
+        backgroundColor: primaryMedium,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.yellow.withOpacity(0.2), width: 1),
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: accentColor.withOpacity(0.3), width: 1),
         ),
-        title: Text(
-          'New Conversation',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-            fontSize: 20,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+        title: const Row(
           children: [
-            _buildDialogTextField(
-              controller: nameController,
-              label: 'Contact Name',
-              icon: Icons.person_outline_rounded,
-            ),
-            SizedBox(height: 16),
-            _buildDialogTextField(
-              controller: messageController,
-              label: 'Initial Message (optional)',
-              icon: Icons.message_outlined,
-              maxLines: 2,
+            Icon(Icons.add_comment_rounded, color: accentColor, size: 24),
+            SizedBox(width: 16),
+            Text(
+              'New Contact',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                fontSize: 20,
+              ),
             ),
           ],
         ),
+        content: TextField(
+          controller: nameController,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            labelText: 'Contact Name',
+            labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+            prefixIcon: const Icon(
+              Icons.person_outline_rounded,
+              color: accentColor,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+            ),
+            focusedBorder: const OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+              borderSide: BorderSide(color: accentColor, width: 2),
+            ),
+            filled: true,
+            fillColor: Colors.white.withOpacity(0.05),
+          ),
+        ),
         actions: [
           TextButton(
-            onPressed: () {
-              HapticFeedback.lightImpact();
-              Navigator.of(ctx).pop();
-            },
+            onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
               'Cancel',
               style: TextStyle(color: Colors.white.withOpacity(0.7)),
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.yellow.shade300, Colors.yellow.shade600],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+          ElevatedButton(
+            onPressed: () {
+              final name = nameController.text.trim();
+              if (name.isNotEmpty) {
+                bool isDuplicate = _conversations.any(
+                  (conv) =>
+                      conv['name'].toString().toLowerCase() ==
+                      name.toLowerCase(),
+                );
+
+                if (isDuplicate) {
+                  _showSnackBar('Contact already exists', warningColor);
+                  return;
+                }
+
+                HapticFeedback.heavyImpact();
+                Navigator.of(ctx).pop(_createDefaultConversation(name));
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accentColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  if (nameController.text.trim().isNotEmpty) {
-                    HapticFeedback.selectionClick();
-                    Navigator.of(ctx).pop({
-                      'name': nameController.text.trim(),
-                      'preview': messageController.text.trim().isEmpty
-                          ? 'No messages yet'
-                          : messageController.text.trim(),
-                      'time': _getCurrentTime(),
-                    });
-                  }
-                },
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Text(
-                    'Add',
-                    style: TextStyle(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
               ),
             ),
+            child: const Text('Add'),
           ),
         ],
       ),
     );
 
-    if (result != null) {
+    if (result != null && mounted) {
       setState(() {
-        conversations.insert(0, result);
+        _conversations.insert(0, result);
+        _filteredConversations = List.from(_conversations);
       });
-      await _saveConversations();
-      await _initializeNewContactThread(result['name']!, result['preview']!);
-      _showSnackBar('New conversation added', Colors.green);
+      await _saveConversations(_conversations);
+      _showSnackBar('New contact added', successColor);
     }
   }
 
-  Widget _buildDialogTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    int maxLines = 1,
-  }) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      style: TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-        prefixIcon: Icon(icon, color: Colors.yellow.shade300),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.yellow.shade300, width: 2),
-        ),
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.05),
-      ),
-    );
-  }
+  String _formatTime(int timestamp) {
+    if (timestamp == 0) return 'New';
 
-  Future<void> _initializeNewContactThread(
-    String contactName,
-    String initialMessage,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final messagesKey = 'messages_$contactName';
-
-    List<Map<String, dynamic>> initialMessages = [];
-    if (initialMessage != 'No messages yet') {
-      initialMessages.add({
-        'text': initialMessage,
-        'isUser': true,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      });
-    }
-
-    await prefs.setString(messagesKey, json.encode(initialMessages));
-  }
-
-  String _getCurrentTime() {
     final now = DateTime.now();
-    final hour = now.hour.toString().padLeft(2, '0');
-    final minute = now.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
-  }
+    final messageTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final difference = now.difference(messageTime);
 
-  Future<void> updateConversationPreview(
-    String contactName,
-    String lastMessage,
-    String time,
-  ) async {
-    final conversationIndex = conversations.indexWhere(
-      (conv) => conv['name'] == contactName,
-    );
-    if (conversationIndex != -1) {
-      setState(() {
-        conversations[conversationIndex]['preview'] = lastMessage;
-        conversations[conversationIndex]['time'] = time;
-
-        // Move conversation to top
-        final updatedConversation = conversations.removeAt(conversationIndex);
-        conversations.insert(0, updatedConversation);
-      });
-      await _saveConversations();
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
     }
   }
 
   Future<void> _deleteConversation(int index) async {
-    final contactName = conversations[index]['name']!;
+    final contactName = _filteredConversations[index]['name'];
+    final originalIndex = _conversations.indexWhere(
+      (conv) => conv['name'] == contactName,
+    );
 
-    setState(() {
-      conversations.removeAt(index);
-    });
-    await _saveConversations();
+    if (originalIndex != -1 && mounted) {
+      setState(() {
+        _conversations.removeAt(originalIndex);
+        _filteredConversations.removeAt(index);
+      });
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('messages_$contactName');
+      await _saveConversations(_conversations);
 
-    _showSnackBar('Conversation deleted', Colors.red);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('messages_$contactName');
+
+      _showSnackBar('Conversation deleted', errorColor);
+    }
   }
 
   void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          message,
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              color == successColor
+                  ? Icons.check_circle
+                  : color == errorColor
+                  ? Icons.error
+                  : Icons.info,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
-        backgroundColor: color.withOpacity(0.9),
+        backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
+        margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: Duration(milliseconds: 2000),
+        duration: const Duration(milliseconds: 2000),
       ),
     );
   }
 
-  void _navigateToChat(String contactName) async {
+  // UPDATED: Enhanced navigation method that uses the callback system
+  void _navigateToChat(String contactName, {String? mode}) async {
     HapticFeedback.selectionClick();
-    final result = await Navigator.pushNamed(
-      context,
-      '/chat',
-      arguments: {'contactName': contactName},
-    );
 
-    // Check if we got updated conversation data back
-    if (result != null && result is Map<String, String>) {
-      await updateConversationPreview(
-        contactName,
-        result['lastMessage'] ?? '',
-        result['time'] ?? _getCurrentTime(),
-      );
+    try {
+      // Use callback to switch to chat tab with selected contact
+      if (widget.onContactSelected != null) {
+        widget.onContactSelected!(contactName, mode: mode);
+      }
+    } catch (e) {
+      debugPrint('Navigation error: $e');
+      _showSnackBar('Could not open conversation', errorColor);
     }
+  }
 
-    _showSnackBar('Opening chat with $contactName', Colors.green);
+  // UPDATED: Method to show navigation options
+  void _showNavigationOptions(String contactName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [primaryMedium, primaryDark],
+          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 50,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Chat with $contactName',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildNavigationOption(
+              icon: Icons.chat_rounded,
+              title: 'View Messages',
+              subtitle: 'See conversation history',
+              onTap: () {
+                Navigator.pop(context);
+                if (widget.onConversationDetailRequested != null) {
+                  widget.onConversationDetailRequested!(contactName);
+                }
+              },
+            ),
+            _buildNavigationOption(
+              icon: Icons.keyboard_rounded,
+              title: 'Text Chat',
+              subtitle: 'Start typing messages',
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToChat(contactName, mode: 'text');
+              },
+            ),
+            _buildNavigationOption(
+              icon: Icons.mic_rounded,
+              title: 'Voice Chat',
+              subtitle: 'Start voice conversation',
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToChat(contactName, mode: 'mic');
+              },
+            ),
+            _buildNavigationOption(
+              icon: Icons.sign_language_rounded,
+              title: 'FSL Chat',
+              subtitle: 'Use Filipino Sign Language',
+              onTap: () {
+                Navigator.pop(context);
+                _navigateToChat(contactName, mode: 'fsl');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavigationOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: accentColor.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: accentColor, size: 24),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+        ),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    );
   }
 
   Color _getAvatarColor(String name) {
-    final colors = [
-      Colors.blue.shade600,
-      Colors.purple.shade600,
-      Colors.green.shade600,
-      Colors.orange.shade600,
-      Colors.red.shade600,
-      Colors.teal.shade600,
+    const colors = [
+      Color(0xFF3B82F6),
+      Color(0xFF8B5CF6),
+      Color(0xFF10B981),
+      Color(0xFFF59E0B),
+      Color(0xFFEF4444),
+      Color(0xFF06B6D4),
     ];
     return colors[name.hashCode % colors.length];
   }
 
-  Widget _buildConversationCard(Map<String, String> conversation, int index) {
-    return AnimatedBuilder(
-      animation: _slideController,
-      builder: (context, child) {
-        final slideOffset =
-            Tween<Offset>(begin: Offset(1.0, 0.0), end: Offset.zero).animate(
-              CurvedAnimation(
-                parent: _slideController,
-                curve: Interval(
-                  (index * 0.1).clamp(0.0, 1.0),
-                  ((index * 0.1) + 0.3).clamp(0.0, 1.0),
-                  curve: Curves.easeOutBack,
-                ),
-              ),
-            );
-
-        return SlideTransition(
-          position: slideOffset,
-          child: Dismissible(
-            key: Key(conversation['name']! + index.toString()),
-            direction: DismissDirection.endToStart,
-            confirmDismiss: (direction) =>
-                _showDeleteConfirmation(conversation['name']!),
-            onDismissed: (direction) => _deleteConversation(index),
-            background: _buildDismissBackground(),
-            child: Container(
-              margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.white.withOpacity(0.15),
-                    Colors.white.withOpacity(0.05),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.1),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withOpacity(0.1),
+                  Colors.white.withOpacity(0.05),
                 ],
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: () async {
-                    final result = await Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        pageBuilder: (context, animation, secondaryAnimation) =>
-                            ConversationDetailScreen(
-                              contactName: conversation['name']!,
-                            ),
-                        transitionsBuilder:
-                            (context, animation, secondaryAnimation, child) {
-                              return SlideTransition(
-                                position:
-                                    Tween<Offset>(
-                                      begin: Offset(1.0, 0.0),
-                                      end: Offset.zero,
-                                    ).animate(
-                                      CurvedAnimation(
-                                        parent: animation,
-                                        curve: Curves.easeInOut,
-                                      ),
-                                    ),
-                                child: child,
-                              );
-                            },
-                      ),
-                    );
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 64,
+              color: Colors.white.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            _filteredConversations.isEmpty && _searchController.text.isNotEmpty
+                ? 'No matches found'
+                : 'No conversations yet',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.9),
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _filteredConversations.isEmpty && _searchController.text.isNotEmpty
+                ? 'Try searching with different keywords'
+                : 'Tap the "New Chat" button to start\nyour first conversation',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.6),
+              fontSize: 16,
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
 
-                    if (result != null && result is Map<String, String>) {
-                      await updateConversationPreview(
-                        conversation['name']!,
-                        result['lastMessage'] ?? '',
-                        result['time'] ?? _getCurrentTime(),
-                      );
-                    }
-                  },
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Row(
+  Widget _buildSearchBar() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withOpacity(0.1),
+            Colors.white.withOpacity(0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
+      child: TextField(
+        controller: _searchController,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: 'Search conversations...',
+          hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: Colors.white.withOpacity(0.7),
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: Icon(
+                    Icons.clear_rounded,
+                    color: Colors.white.withOpacity(0.7),
+                  ),
+                  onPressed: () => _searchController.clear(),
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageTypeIndicators(Map<String, dynamic> conversation) {
+    List<Widget> indicators = [];
+
+    if (conversation['hasVoiceMessages'] == true) {
+      indicators.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: accentColor.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: accentColor.withOpacity(0.3)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.mic_rounded, size: 12, color: accentColor),
+              SizedBox(width: 2),
+              Text('Voice', style: TextStyle(fontSize: 10, color: accentColor)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (conversation['hasFSLMessages'] == true) {
+      indicators.add(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: accentSecondary.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: accentSecondary.withOpacity(0.3)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.sign_language_rounded,
+                size: 12,
+                color: accentSecondary,
+              ),
+              SizedBox(width: 2),
+              Text(
+                'FSL',
+                style: TextStyle(fontSize: 10, color: accentSecondary),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (indicators.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 4, children: indicators);
+  }
+
+  Widget _buildConversationCard(Map<String, dynamic> conversation, int index) {
+    return Dismissible(
+      key: Key('${conversation['name']}_$index'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (direction) =>
+          _showDeleteConfirmation(conversation['name']),
+      onDismissed: (direction) => _deleteConversation(index),
+      background: _buildDismissBackground(),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              primaryMedium.withOpacity(0.8),
+              primaryLight.withOpacity(0.6),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.1), width: 1),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _navigateToChat(conversation['name']),
+            onLongPress: () => _showNavigationOptions(conversation['name']),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  _buildAvatar(conversation['name']),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildAvatar(conversation['name']!),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      conversation['name']!,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                        color: Colors.white,
-                                        letterSpacing: 0.3,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.yellow.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: Colors.yellow.withOpacity(0.3),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      conversation['time']!,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.yellow.shade300,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                conversation['name'],
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 17,
+                                  color: Colors.white,
+                                  letterSpacing: 0.3,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      conversation['preview']!,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.white.withOpacity(0.7),
-                                        height: 1.3,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  SizedBox(width: 12),
-                                  _buildChatButton(conversation['name']!),
-                                ],
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
                               ),
-                            ],
-                          ),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    accentColor.withOpacity(0.2),
+                                    accentSecondary.withOpacity(0.2),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: accentColor.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Text(
+                                _formatTime(
+                                  conversation['lastMessageTime'] ?? 0,
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: accentColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(width: 8),
-                        Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 16,
-                          color: Colors.white.withOpacity(0.4),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (conversation['lastMessageType'] == 'voice')
+                              const Padding(
+                                padding: EdgeInsets.only(right: 6),
+                                child: Icon(
+                                  Icons.mic_rounded,
+                                  size: 14,
+                                  color: accentColor,
+                                ),
+                              )
+                            else if (conversation['lastMessageType'] == 'fsl')
+                              const Padding(
+                                padding: EdgeInsets.only(right: 6),
+                                child: Icon(
+                                  Icons.sign_language_rounded,
+                                  size: 14,
+                                  color: accentSecondary,
+                                ),
+                              ),
+                            Expanded(
+                              child: Text(
+                                conversation['preview'],
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withOpacity(0.8),
+                                  height: 1.3,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildMessageTypeIndicators(conversation),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${conversation['messageCount'] ?? 0} msgs',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.white.withOpacity(0.7),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _buildChatButton(conversation['name']),
+                              ],
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
   Widget _buildAvatar(String name) {
     return Container(
-      width: 52,
-      height: 52,
+      width: 56,
+      height: 56,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -665,23 +848,16 @@ class _HistoryScreenState extends State<HistoryScreen>
             _getAvatarColor(name).withOpacity(0.8),
           ],
         ),
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(28),
         border: Border.all(color: Colors.white.withOpacity(0.2), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: _getAvatarColor(name).withOpacity(0.3),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
       ),
       child: Center(
         child: Text(
-          name[0].toUpperCase(),
-          style: TextStyle(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
-            fontSize: 20,
+            fontSize: 22,
           ),
         ),
       ),
@@ -690,27 +866,18 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   Widget _buildChatButton(String contactName) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.yellow.shade300, Colors.yellow.shade600],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.yellow.withOpacity(0.3),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(colors: [accentColor, accentSecondary]),
+        borderRadius: BorderRadius.all(Radius.circular(20)),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () => _navigateToChat(contactName),
-          child: Padding(
+          child: const Padding(
             padding: EdgeInsets.all(10),
-            child: Icon(Icons.mic_rounded, color: Colors.black87, size: 20),
+            child: Icon(Icons.chat_rounded, color: Colors.white, size: 18),
           ),
         ),
       ),
@@ -720,15 +887,15 @@ class _HistoryScreenState extends State<HistoryScreen>
   Widget _buildDismissBackground() {
     return Container(
       alignment: Alignment.centerRight,
-      padding: EdgeInsets.only(right: 20),
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.only(right: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.red.shade400, Colors.red.shade600],
+          colors: [errorColor.withOpacity(0.8), errorColor],
         ),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
+      child: const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.delete_rounded, color: Colors.white, size: 28),
@@ -750,14 +917,23 @@ class _HistoryScreenState extends State<HistoryScreen>
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Color(0xFF16213E),
+        backgroundColor: primaryMedium,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.red.withOpacity(0.3), width: 1),
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: errorColor.withOpacity(0.3), width: 1),
         ),
-        title: Text(
-          'Delete Conversation?',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever_rounded, color: errorColor, size: 24),
+            SizedBox(width: 16),
+            Text(
+              'Delete Conversation?',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
         ),
         content: Text(
           'Are you sure you want to delete this conversation with $contactName? This action cannot be undone.',
@@ -771,126 +947,69 @@ class _HistoryScreenState extends State<HistoryScreen>
               style: TextStyle(color: Colors.white.withOpacity(0.7)),
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.red.shade400, Colors.red.shade600],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+          ElevatedButton(
+            onPressed: () {
+              HapticFeedback.heavyImpact();
+              Navigator.of(ctx).pop(true);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: errorColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () {
-                  HapticFeedback.heavyImpact();
-                  Navigator.of(ctx).pop(true);
-                },
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Text(
-                    'Delete',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
               ),
             ),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildEmptyState() {
-    return FadeTransition(
-      opacity: _fadeController,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.white.withOpacity(0.1),
-                    Colors.white.withOpacity(0.05),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-              ),
-              child: Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 64,
-                color: Colors.white.withOpacity(0.6),
-              ),
-            ),
-            SizedBox(height: 24),
-            Text(
-              'No conversations yet',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.9),
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Tap the "New Chat" button to start\nyour first conversation',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                fontSize: 16,
-                height: 1.4,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
+    super.build(context);
+
+    if (_isLoading) {
       return Scaffold(
-        backgroundColor: Color(0xFF0A1A2E),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Colors.yellow.shade300,
+        backgroundColor: primaryDark,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [primaryDark, primaryMedium, primaryLight],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(accentColor),
                 ),
-                strokeWidth: 3,
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Loading conversations...',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.7),
-                  fontSize: 16,
+                SizedBox(height: 24),
+                Text(
+                  'Loading conversations...',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Color(0xFF0A1A2E),
-      extendBodyBehindAppBar: true,
+      backgroundColor: primaryDark,
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF0A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
+            colors: [primaryDark, primaryMedium, primaryLight],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -901,76 +1020,78 @@ class _HistoryScreenState extends State<HistoryScreen>
               // Header
               Container(
                 width: double.infinity,
-                padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFF0A1A2E).withOpacity(0.9),
-                      Color(0xFF0A1A2E).withOpacity(0.7),
-                      Colors.transparent,
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 28,
+                  horizontal: 20,
                 ),
-                child: FadeTransition(
-                  opacity: _fadeController,
-                  child: Column(
-                    children: [
-                      Text(
-                        'Tinig-Kamay History',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                child: Column(
+                  children: [
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.history_rounded,
+                          color: accentColor,
+                          size: 28,
                         ),
-                      ),
-                      SizedBox(height: 8),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.yellow.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.yellow.withOpacity(0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: Text(
-                          '${conversations.length} conversation${conversations.length != 1 ? 's' : ''}',
+                        SizedBox(width: 16),
+                        Text(
+                          'Tinig-Kamay History',
                           style: TextStyle(
-                            color: Colors.yellow.shade300,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                    ],
-                  ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            accentColor.withOpacity(0.2),
+                            accentSecondary.withOpacity(0.2),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: accentColor.withOpacity(0.3)),
+                      ),
+                      child: Text(
+                        '${_conversations.length} contact${_conversations.length != 1 ? 's' : ''}',
+                        style: const TextStyle(
+                          color: accentColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
+              // Search Bar
+              if (_conversations.isNotEmpty) _buildSearchBar(),
+
               // Content
               Expanded(
-                child: conversations.isEmpty
+                child: _filteredConversations.isEmpty
                     ? _buildEmptyState()
-                    : FadeTransition(
-                        opacity: _fadeController,
-                        child: ListView.builder(
-                          padding: EdgeInsets.only(bottom: 100),
-                          physics: BouncingScrollPhysics(),
-                          itemCount: conversations.length,
-                          itemBuilder: (context, index) {
-                            return _buildConversationCard(
-                              conversations[index],
-                              index,
-                            );
-                          },
-                        ),
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: _filteredConversations.length,
+                        itemBuilder: (context, index) {
+                          return _buildConversationCard(
+                            _filteredConversations[index],
+                            index,
+                          );
+                        },
                       ),
               ),
             ],
@@ -978,40 +1099,31 @@ class _HistoryScreenState extends State<HistoryScreen>
         ),
       ),
       floatingActionButton: Container(
-        margin: EdgeInsets.only(bottom: 16, right: 8),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.yellow.shade300, Colors.yellow.shade600],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.yellow.withOpacity(0.3),
-              blurRadius: 15,
-              offset: Offset(0, 8),
-            ),
-          ],
+        margin: const EdgeInsets.only(bottom: 8, right: 8),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(colors: [accentColor, accentSecondary]),
+          borderRadius: BorderRadius.all(Radius.circular(24)),
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             onTap: _addNewConversation,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.add_comment_rounded,
-                    color: Colors.black87,
+                    color: Colors.white,
                     size: 24,
                   ),
-                  SizedBox(width: 8),
+                  SizedBox(width: 12),
                   Text(
                     'New Chat',
                     style: TextStyle(
-                      color: Colors.black87,
+                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
