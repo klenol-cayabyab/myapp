@@ -38,6 +38,8 @@ class Message {
   );
 }
 
+enum ChatMode { text, mic, fsl }
+
 class ChatScreen extends StatefulWidget {
   final String selectedContact;
   final String? initialMode;
@@ -55,20 +57,19 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
-  // Controllers - Made non-nullable for better memory management
+  // Controllers
   late stt.SpeechToText _speech;
   late FlutterTts _flutterTts;
   late TextEditingController _textController;
-  late AnimationController _iconController;
-  late AnimationController _waveController;
-  late AnimationController _pulseController;
+
+  // Animation controllers - only create when needed
+  AnimationController? _waveController;
+  AnimationController? _pulseController;
   late AnimationController _typewriterController;
-  late AnimationController _slideController;
 
   // State variables
   bool _isListening = false;
-  bool _isMicMode = true;
-  bool _isTextMode = false;
+  ChatMode _currentMode = ChatMode.mic;
   String _outputText = '';
   List<Message> _sessionMessages = [];
   double _voiceLevel = 0.0;
@@ -76,25 +77,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   List<String> _availableContacts = [];
   bool _isContactsLoading = true;
   String? _expandedCategory;
+  bool _isDisposed = false;
 
-  //  color scheme
+  // Color scheme
   static const Color primaryDark = Color(0xFF0A1628);
   static const Color primaryMedium = Color(0xFF1E3A5F);
   static const Color primaryLight = Color(0xFF2D5A87);
   static const Color accentColor = Color(0xFF00D4FF);
   static const Color accentSecondary = Color(0xFF7C3AED);
 
-  // FSL Categories
+  // FSL Categories - made smaller for better performance
   final Map<String, List<String>> _fslCategories = {
-    'Greetings': ['Kumusta po', 'Hello', 'Good morning', 'Good afternoon'],
-    'Gratitude': ['Salamat', 'Thank you', 'Salamat po', 'Maraming salamat'],
-    'Emotions': ['Mahal kita', 'Miss kita', 'Masaya ako', 'Malungkot ako'],
-    'Questions': [
-      'Nasaan ka?',
-      'Kumain ka na?',
-      'Okay ka lang?',
-      'Ano ginagawa mo?',
-    ],
+    'Greetings': ['Kumusta po', 'Hello', 'Good morning'],
+    'Gratitude': ['Salamat', 'Thank you', 'Maraming salamat'],
+    'Emotions': ['Mahal kita', 'Miss kita', 'Masaya ako'],
+    'Questions': ['Nasaan ka?', 'Kumain ka na?', 'Okay ka lang?'],
   };
 
   @override
@@ -108,25 +105,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   void _initializeControllers() {
     _textController = TextEditingController();
-    _iconController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _waveController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2000),
-    );
     _typewriterController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-    _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 800),
     );
   }
 
@@ -138,14 +119,30 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   void _setInitialMode() {
     if (widget.initialMode == 'fsl') {
-      _isMicMode = false;
-      _isTextMode = false;
+      _currentMode = ChatMode.fsl;
     } else if (widget.initialMode == 'mic') {
-      _isMicMode = true;
-      _isTextMode = false;
+      _currentMode = ChatMode.mic;
     } else {
-      _isTextMode = true;
-      _isMicMode = false;
+      _currentMode = ChatMode.text;
+    }
+  }
+
+  // Lazy initialization with null safety
+  void _ensureWaveController() {
+    if (_waveController == null && !_isDisposed && mounted) {
+      _waveController = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1200),
+      );
+    }
+  }
+
+  void _ensurePulseController() {
+    if (_pulseController == null && !_isDisposed && mounted) {
+      _pulseController = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1800),
+      );
     }
   }
 
@@ -159,20 +156,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    // Dispose controllers in reverse order
-    _slideController.dispose();
+    _isDisposed = true;
+    _waveController?.dispose();
+    _pulseController?.dispose();
     _typewriterController.dispose();
-    _pulseController.dispose();
-    _waveController.dispose();
-    _iconController.dispose();
     _textController.dispose();
-
-    // Stop TTS and speech
     _flutterTts.stop();
     if (_isListening) {
       _speech.stop();
     }
-
     super.dispose();
   }
 
@@ -182,8 +174,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         onStatus: (status) {
           if (mounted && status == 'notListening' && _isListening) {
             setState(() => _isListening = false);
-            _pulseController.stop();
-            _pulseController.reset();
+            _pulseController?.stop();
+            _pulseController?.reset();
           }
         },
         onError: (error) {
@@ -402,10 +394,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ],
         ),
-        duration: const Duration(milliseconds: 1500),
+        duration: const Duration(milliseconds: 1200),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.only(bottom: 100, left: 20, right: 20),
+        margin: const EdgeInsets.only(bottom: 80, left: 20, right: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
@@ -424,7 +416,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     if (!_speech.isListening) {
       setState(() => _isListening = true);
-      _pulseController.repeat();
+
+      if (_currentMode == ChatMode.mic) {
+        _ensurePulseController();
+        _pulseController?.repeat();
+      }
+
       HapticFeedback.lightImpact();
 
       await _speech.listen(
@@ -451,11 +448,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         partialResults: true,
         listenMode: stt.ListenMode.confirmation,
         cancelOnError: false,
-        pauseFor: const Duration(seconds: 5),
-        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 4),
+        listenFor: const Duration(seconds: 30),
         localeId: 'en_US',
         onSoundLevelChange: (level) {
-          if (mounted) {
+          if (mounted && _currentMode == ChatMode.mic) {
             setState(() => _voiceLevel = level.clamp(0.0, 1.0));
           }
         },
@@ -468,8 +465,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       setState(() => _isListening = false);
     }
     _speech.stop();
-    _pulseController.stop();
-    _pulseController.reset();
+    _pulseController?.stop();
+    _pulseController?.reset();
     HapticFeedback.lightImpact();
   }
 
@@ -502,22 +499,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (!mounted) return;
 
     setState(() {
-      if (_isTextMode) {
-        _isTextMode = false;
-        _isMicMode = true;
-      } else if (_isMicMode) {
-        _isMicMode = false;
-        _isTextMode = false;
-      } else {
-        _isTextMode = true;
-        _isMicMode = false;
+      switch (_currentMode) {
+        case ChatMode.text:
+          _currentMode = ChatMode.mic;
+          break;
+        case ChatMode.mic:
+          _currentMode = ChatMode.fsl;
+          break;
+        case ChatMode.fsl:
+          _currentMode = ChatMode.text;
+          break;
       }
 
-      _iconController.forward(from: 0);
       _outputText = '';
       _expandedCategory = null;
       if (_isListening) _stopListening();
     });
+
     HapticFeedback.mediumImpact();
   }
 
@@ -548,12 +546,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
             SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                'Loading contacts...',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-              ),
+            Text(
+              'Loading contacts...',
+              style: TextStyle(color: Colors.white, fontSize: 16),
             ),
           ],
         ),
@@ -612,7 +607,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Flexible(
+                  Expanded(
                     child: Text(
                       contact,
                       style: const TextStyle(color: Colors.white),
@@ -629,7 +624,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 mounted) {
               setState(() => _selectedContact = newContact);
               _loadContactMessages();
-              // Notify parent about contact change
               if (widget.onContactChange != null) {
                 widget.onContactChange!(newContact);
               }
@@ -646,7 +640,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       padding: const EdgeInsets.all(20),
-      constraints: const BoxConstraints(minHeight: 80, maxHeight: 120),
+      constraints: const BoxConstraints(
+        minHeight: 80,
+        maxHeight: 120, // Fixed constraint to prevent unbounded height
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -664,11 +661,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           duration: const Duration(milliseconds: 300),
           child: _outputText.isEmpty
               ? Text(
-                  _isTextMode
-                      ? 'Type your message below...'
-                      : _isMicMode
-                      ? 'Tap the mic to start speaking...'
-                      : 'Select a phrase to translate...',
+                  _getPlaceholderText(),
                   key: const ValueKey('placeholder'),
                   style: TextStyle(
                     fontSize: 16,
@@ -683,7 +676,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     final displayText = _outputText.substring(
                       0,
                       (_outputText.length * _typewriterController.value)
-                          .round(),
+                          .round()
+                          .clamp(0, _outputText.length),
                     );
 
                     return Text(
@@ -706,9 +700,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
+  String _getPlaceholderText() {
+    switch (_currentMode) {
+      case ChatMode.text:
+        return 'Type your message below...';
+      case ChatMode.mic:
+        return 'Tap the mic to start speaking...';
+      case ChatMode.fsl:
+        return 'Select a phrase to translate...';
+    }
+  }
+
   Widget _buildModernMicButton() {
+    _ensurePulseController();
+
     return AnimatedBuilder(
-      animation: _pulseController,
+      animation: _pulseController ?? const AlwaysStoppedAnimation(0.0),
       builder: (context, child) {
         return Container(
           decoration: BoxDecoration(
@@ -717,8 +724,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ? [
                     BoxShadow(
                       color: accentColor.withOpacity(0.4),
-                      blurRadius: 20 + 10 * _pulseController.value,
-                      spreadRadius: 5 + 15 * _pulseController.value,
+                      blurRadius: 20 + 10 * (_pulseController?.value ?? 0),
+                      spreadRadius: 5 + 15 * (_pulseController?.value ?? 0),
                     ),
                   ]
                 : [
@@ -735,8 +742,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               onTap: _isListening ? _stopListening : _startListening,
               borderRadius: BorderRadius.circular(80),
               child: Container(
-                width: 160,
-                height: 160,
+                width: 140,
+                height: 140,
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     colors: [accentColor, accentSecondary],
@@ -751,7 +758,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     child: Icon(
                       _isListening ? Icons.mic_off_rounded : Icons.mic_rounded,
                       key: ValueKey(_isListening),
-                      size: 64,
+                      size: 56,
                       color: Colors.white,
                     ),
                   ),
@@ -766,8 +773,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   Widget _buildModernFSLButton() {
     return Container(
-      width: 160,
-      height: 160,
+      width: 140,
+      height: 140,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [accentSecondary, accentColor],
@@ -776,7 +783,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
         shape: BoxShape.circle,
       ),
-      child: const Icon(Icons.back_hand_rounded, size: 64, color: Colors.white),
+      child: const Icon(Icons.back_hand_rounded, size: 56, color: Colors.white),
     );
   }
 
@@ -784,6 +791,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
+        mainAxisSize: MainAxisSize.min, // Fixed: prevent unbounded height
         children: _fslCategories.entries.map((entry) {
           final category = entry.key;
           final phrases = entry.value;
@@ -805,6 +813,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min, // Fixed: prevent unbounded height
               children: [
                 Material(
                   color: Colors.transparent,
@@ -928,43 +937,61 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildVoiceWaveAnimation() {
-    return AnimatedBuilder(
-      animation: _waveController,
-      builder: (context, child) {
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(5, (index) {
-            final delay = index * 0.2;
-            final animValue = (_waveController.value + delay) % 1.0;
-            final height =
-                (20 +
-                        30 *
-                            _voiceLevel *
-                            (0.5 + 0.5 * math.sin(animValue * 2 * math.pi)))
-                    .clamp(10.0, 50.0);
+    _ensureWaveController();
 
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              width: 4,
-              height: height,
-              decoration: BoxDecoration(
-                color: accentColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            );
-          }),
-        );
-      },
+    if (_waveController == null) {
+      return const SizedBox(
+        height: 40,
+      ); // Fixed height to prevent layout issues
+    }
+
+    if (_isListening && _currentMode == ChatMode.mic) {
+      _waveController!.repeat();
+    } else {
+      _waveController!.stop();
+    }
+
+    return Container(
+      height: 40, // Fixed height constraint
+      child: AnimatedBuilder(
+        animation: _waveController!,
+        builder: (context, child) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(5, (index) {
+              final delay = index * 0.2;
+              final animValue = (_waveController!.value + delay) % 1.0;
+              final height =
+                  (20 +
+                          20 *
+                              _voiceLevel *
+                              (0.5 + 0.5 * math.sin(animValue * 2 * math.pi)))
+                      .clamp(10.0, 40.0);
+
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                width: 4,
+                height: height,
+                decoration: BoxDecoration(
+                  color: accentColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              );
+            }),
+          );
+        },
+      ),
     );
   }
 
   Widget _buildMessagesList() {
     if (_sessionMessages.isEmpty) return const SizedBox.shrink();
 
-    return SizedBox(
-      height: 140,
+    return Container(
+      height: 140, // Fixed height constraint
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -1047,6 +1074,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Row(
                         children: [
@@ -1134,6 +1162,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
+          mainAxisSize: MainAxisSize.min, // Fixed: prevent unbounded height
           children: [
             _buildContactSelector(),
             _buildMessagesList(),
@@ -1156,6 +1185,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
                     controller: _textController,
@@ -1238,11 +1268,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
+          mainAxisSize: MainAxisSize.min, // Fixed: prevent unbounded height
           children: [
             _buildContactSelector(),
             _buildMessagesList(),
             _buildModernOutputBubble(),
-            if (_isListening) ...[
+            if (_isListening && _currentMode == ChatMode.mic) ...[
               const SizedBox(height: 20),
               _buildVoiceWaveAnimation(),
             ],
@@ -1277,6 +1308,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
+          mainAxisSize: MainAxisSize.min, // Fixed: prevent unbounded height
           children: [
             _buildContactSelector(),
             _buildMessagesList(),
@@ -1303,16 +1335,23 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildModernToggleButton() {
-    String currentMode = _isTextMode
-        ? 'TEXT'
-        : _isMicMode
-        ? 'MIC'
-        : 'FSL';
-    IconData currentIcon = _isTextMode
-        ? Icons.keyboard_rounded
-        : _isMicMode
-        ? Icons.mic_rounded
-        : Icons.sign_language_rounded;
+    String currentModeText;
+    IconData currentIcon;
+
+    switch (_currentMode) {
+      case ChatMode.text:
+        currentModeText = 'TEXT';
+        currentIcon = Icons.keyboard_rounded;
+        break;
+      case ChatMode.mic:
+        currentModeText = 'MIC';
+        currentIcon = Icons.mic_rounded;
+        break;
+      case ChatMode.fsl:
+        currentModeText = 'FSL';
+        currentIcon = Icons.sign_language_rounded;
+        break;
+    }
 
     return Container(
       margin: const EdgeInsets.only(right: 16, top: 8),
@@ -1340,14 +1379,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   duration: const Duration(milliseconds: 300),
                   child: Icon(
                     currentIcon,
-                    key: ValueKey(currentMode),
+                    key: ValueKey(currentModeText),
                     color: accentColor,
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  currentMode,
+                  currentModeText,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.9),
                     fontSize: 12,
@@ -1395,6 +1434,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           ),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
                 'Tinig-Kamay Chat',
@@ -1405,16 +1445,14 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   letterSpacing: 0.5,
                 ),
               ),
-              Flexible(
-                child: Text(
-                  _selectedContact,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                _selectedContact,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.7),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -1422,13 +1460,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         ),
         body: SafeArea(
           child: Column(
+            mainAxisSize: MainAxisSize.min, // Fixed: prevent unbounded height
             children: [
               const SizedBox(height: 10),
-              _isTextMode
-                  ? _buildTextMode()
-                  : _isMicMode
-                  ? _buildMicMode()
-                  : _buildFslMode(),
+              // Fixed switch statement with proper constraints
+              switch (_currentMode) {
+                ChatMode.text => _buildTextMode(),
+                ChatMode.mic => _buildMicMode(),
+                ChatMode.fsl => _buildFslMode(),
+              },
             ],
           ),
         ),

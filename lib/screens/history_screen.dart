@@ -28,7 +28,7 @@ class _HistoryScreenState extends State<HistoryScreen>
 
   final TextEditingController _searchController = TextEditingController();
 
-  // Enhanced color scheme
+  //color scheme
   static const Color primaryDark = Color(0xFF0A1628);
   static const Color primaryMedium = Color(0xFF1E3A5F);
   static const Color primaryLight = Color(0xFF2D5A87);
@@ -380,7 +380,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
-  // UPDATED: Enhanced navigation method that uses the callback system
+  //navigation method that uses the callback system
   void _navigateToChat(String contactName, {String? mode}) async {
     HapticFeedback.selectionClick();
 
@@ -395,12 +395,17 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
-  // UPDATED: Method to show navigation options
+  //Method to show navigation options
   void _showNavigationOptions(String contactName) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+          maxWidth: MediaQuery.of(context).size.width,
+        ),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -410,66 +415,76 @@ class _HistoryScreenState extends State<HistoryScreen>
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 50,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          // Added scroll view to prevent overflow
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 50,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Chat with $contactName',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 24),
+              // Wrapped text in Flexible to prevent overflow
+              Flexible(
+                child: Text(
+                  'Chat with $contactName',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            _buildNavigationOption(
-              icon: Icons.chat_rounded,
-              title: 'View Messages',
-              subtitle: 'See conversation history',
-              onTap: () {
-                Navigator.pop(context);
-                if (widget.onConversationDetailRequested != null) {
-                  widget.onConversationDetailRequested!(contactName);
-                }
-              },
-            ),
-            _buildNavigationOption(
-              icon: Icons.keyboard_rounded,
-              title: 'Text Chat',
-              subtitle: 'Start typing messages',
-              onTap: () {
-                Navigator.pop(context);
-                _navigateToChat(contactName, mode: 'text');
-              },
-            ),
-            _buildNavigationOption(
-              icon: Icons.mic_rounded,
-              title: 'Voice Chat',
-              subtitle: 'Start voice conversation',
-              onTap: () {
-                Navigator.pop(context);
-                _navigateToChat(contactName, mode: 'mic');
-              },
-            ),
-            _buildNavigationOption(
-              icon: Icons.sign_language_rounded,
-              title: 'FSL Chat',
-              subtitle: 'Use Filipino Sign Language',
-              onTap: () {
-                Navigator.pop(context);
-                _navigateToChat(contactName, mode: 'fsl');
-              },
-            ),
-          ],
+              const SizedBox(height: 24),
+              _buildNavigationOption(
+                icon: Icons.chat_rounded,
+                title: 'View Messages',
+                subtitle: 'See conversation history',
+                onTap: () {
+                  Navigator.pop(context);
+                  if (widget.onConversationDetailRequested != null) {
+                    widget.onConversationDetailRequested!(contactName);
+                  }
+                },
+              ),
+              _buildNavigationOption(
+                icon: Icons.keyboard_rounded,
+                title: 'Text Chat',
+                subtitle: 'Start typing messages',
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToChat(contactName, mode: 'text');
+                },
+              ),
+              _buildNavigationOption(
+                icon: Icons.mic_rounded,
+                title: 'Voice Chat',
+                subtitle: 'Start voice conversation',
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToChat(contactName, mode: 'mic');
+                },
+              ),
+              _buildNavigationOption(
+                icon: Icons.sign_language_rounded,
+                title: 'FSL Chat',
+                subtitle: 'Use Filipino Sign Language',
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToChat(contactName, mode: 'fsl');
+                },
+              ),
+              SizedBox(height: MediaQuery.of(context).padding.bottom),
+            ],
+          ),
         ),
       ),
     );
@@ -505,10 +520,14 @@ class _HistoryScreenState extends State<HistoryScreen>
             fontWeight: FontWeight.w600,
             fontSize: 16,
           ),
+          overflow: TextOverflow.ellipsis, // Added overflow handling
+          maxLines: 1, // Limit to single line
         ),
         subtitle: Text(
           subtitle,
           style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
