@@ -1,6 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+/// Settings Screen Widget for Tinig-Kamay Communication Platform
+/// This screen provides user configuration options including Bluetooth connectivity,
+/// language selection, notifications, and account management
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -8,17 +11,24 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+/// State class for SettingsScreen with TickerProviderStateMixin for animations
 class _SettingsScreenState extends State<SettingsScreen>
     with TickerProviderStateMixin {
-  bool isBluetoothConnected = false;
-  String selectedLanguage = 'Tagalog';
-  bool isNotificationsEnabled = true;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
+  // State variables for user preferences and settings
+  bool isBluetoothConnected =
+      false; // Tracks Tinig-Kamay glove connection status
+  String selectedLanguage = 'Tagalog'; // Currently selected app language
+  bool isNotificationsEnabled = true; // Toggle for app notifications
+
+  // Animation controllers for smooth UI transitions
+  late AnimationController _animationController; // Controls fade-in animation
+  late Animation<double> _fadeAnimation; // Fade animation for screen entrance
 
   @override
   void initState() {
     super.initState();
+
+    // Initialize fade-in animation for smooth screen entrance
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -26,20 +36,27 @@ class _SettingsScreenState extends State<SettingsScreen>
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
+
+    // Start the fade-in animation when screen loads
     _animationController.forward();
   }
 
   @override
   void dispose() {
+    // Clean up animation controller to prevent memory leaks
     _animationController.dispose();
     super.dispose();
   }
 
+  /// Toggles Bluetooth connection to Tinig-Kamay glove
+  /// Simulates connecting/disconnecting from the hardware device
+  /// Shows feedback snackbar to inform user of connection status
   void toggleBluetoothConnection() {
     setState(() {
       isBluetoothConnected = !isBluetoothConnected;
     });
 
+    // Show feedback snackbar with connection status
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -64,6 +81,9 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  /// Shows modal bottom sheet for language selection
+  /// Displays available languages (Tagalog, English) with glassmorphism design
+  /// Updates selectedLanguage state when user makes a choice
   void showLanguageSelector() {
     showModalBottomSheet(
       context: context,
@@ -72,9 +92,13 @@ class _SettingsScreenState extends State<SettingsScreen>
       builder: (context) => ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(
+            sigmaX: 10,
+            sigmaY: 10,
+          ), // Glassmorphism effect
           child: Container(
             decoration: BoxDecoration(
+              // Gradient background with transparency for glassmorphism
               gradient: LinearGradient(
                 colors: [
                   const Color(0xFF0A1A2E).withOpacity(0.9),
@@ -95,6 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Handle bar for modal sheet
                 Container(
                   width: 50,
                   height: 5,
@@ -104,6 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
+                // Modal title
                 const Text(
                   'Select Language',
                   style: TextStyle(
@@ -113,12 +139,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
+                // Language options list
                 ...['Tagalog', 'English'].map(
                   (language) => ListTile(
                     leading: Icon(
                       Icons.language,
                       color: selectedLanguage == language
-                          ? Colors.yellow.shade300
+                          ? Colors
+                                .yellow
+                                .shade300 // Highlight selected language
                           : Colors.white54,
                     ),
                     title: Text(
@@ -136,6 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         ? Icon(Icons.check, color: Colors.yellow.shade300)
                         : null,
                     onTap: () {
+                      // Update selected language and close modal
                       setState(() {
                         selectedLanguage = language;
                       });
@@ -152,11 +182,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  /// Navigates to contact management screen (history screen)
+  /// Shows confirmation feedback to user about the navigation
   void navigateToManageContacts() {
     // Navigate to history screen (which shows contacts/conversations)
     Navigator.pushNamed(context, '/history');
 
-    // Show confirmation snackbar
+    // Show confirmation snackbar with delay for better UX
     if (mounted) {
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) {
@@ -178,6 +210,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
   }
 
+  /// Shows logout confirmation dialog and handles user logout
+  /// Clears navigation stack and redirects to login screen
   void logout() {
     showDialog(
       context: context,
@@ -196,10 +230,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           style: TextStyle(color: Colors.white70),
         ),
         actions: [
+          // Cancel button
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
+          // Confirm logout button
           ElevatedButton(
             onPressed: () {
               Navigator.of(context).pop(); // Close dialog first
@@ -207,7 +243,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               Navigator.pushNamedAndRemoveUntil(
                 context,
                 '/login',
-                (route) => false,
+                (route) => false, // Remove all previous routes
               );
             },
             style: ElevatedButton.styleFrom(
@@ -221,6 +257,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  /// Builds a glassmorphism-style card container for settings sections
+  /// Provides consistent styling across all settings cards
+  /// Parameters:
+  /// - child: Widget to be displayed inside the card
+  /// - padding: Optional custom padding (defaults to 16px all around)
   Widget _buildSettingsCard({required Widget child, EdgeInsets? padding}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -228,9 +269,13 @@ class _SettingsScreenState extends State<SettingsScreen>
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(
+            sigmaX: 10,
+            sigmaY: 10,
+          ), // Glassmorphism blur effect
           child: Container(
             decoration: BoxDecoration(
+              // Semi-transparent gradient for glassmorphism effect
               gradient: LinearGradient(
                 colors: [
                   Colors.white.withOpacity(0.15),
@@ -256,15 +301,16 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1A2E),
-      extendBodyBehindAppBar: true,
+      backgroundColor: const Color(0xFF0A1A2E), // Dark blue background
+      extendBodyBehindAppBar: true, // Allow content behind transparent app bar
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        // Custom back button with proper navigation logic
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () {
-            // Ensure proper navigation back
+            // Ensure proper navigation back to home or previous screen
             if (Navigator.canPop(context)) {
               Navigator.pop(context);
             } else {
@@ -272,6 +318,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             }
           },
         ),
+        // Gradient overlay for app bar
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -296,6 +343,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
       body: Container(
+        // Main background gradient
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [Color(0xFF0A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
@@ -305,7 +353,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
         child: SafeArea(
           child: FadeTransition(
-            opacity: _fadeAnimation,
+            opacity: _fadeAnimation, // Fade-in animation for entire content
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -314,15 +362,18 @@ class _SettingsScreenState extends State<SettingsScreen>
                   const SizedBox(height: 20),
                   Expanded(
                     child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
+                      physics:
+                          const BouncingScrollPhysics(), // iOS-style bounce scroll
                       child: Column(
                         children: [
                           // Bluetooth Connection Card
+                          // Manages connection to Tinig-Kamay glove device
                           _buildSettingsCard(
                             child: Column(
                               children: [
                                 Row(
                                   children: [
+                                    // Bluetooth icon with gradient background
                                     Container(
                                       padding: const EdgeInsets.all(10),
                                       decoration: BoxDecoration(
@@ -350,6 +401,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                       ),
                                     ),
                                     const SizedBox(width: 16),
+                                    // Device name and connection status
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
@@ -377,6 +429,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                         ],
                                       ),
                                     ),
+                                    // Connect/Disconnect button
                                     Material(
                                       color: Colors.transparent,
                                       child: InkWell(
@@ -455,6 +508,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ),
 
                           // App Settings Card
+                          // Contains language and notification preferences
                           _buildSettingsCard(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,6 +522,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 16),
+                                // Language selection option
                                 ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   leading: Container(
@@ -495,7 +550,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     style: TextStyle(color: Colors.white),
                                   ),
                                   subtitle: Text(
-                                    selectedLanguage,
+                                    selectedLanguage, // Shows current language
                                     style: const TextStyle(
                                       color: Colors.white70,
                                     ),
@@ -505,9 +560,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     color: Colors.white54,
                                     size: 16,
                                   ),
-                                  onTap: showLanguageSelector,
+                                  onTap:
+                                      showLanguageSelector, // Opens language selector
                                 ),
                                 const Divider(color: Colors.white24),
+                                // Notification toggle option
                                 ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   leading: Container(
@@ -555,6 +612,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           ),
 
                           // Quick Actions Card
+                          // Contains frequently used actions like contacts and logout
                           _buildSettingsCard(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,6 +626,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 16),
+                                // Manage contacts option
                                 ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   leading: Container(
@@ -603,9 +662,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     color: Colors.white54,
                                     size: 16,
                                   ),
-                                  onTap: navigateToManageContacts,
+                                  onTap:
+                                      navigateToManageContacts, // Navigate to contacts
                                 ),
                                 const Divider(color: Colors.white24),
+                                // Logout option
                                 ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   leading: Container(
@@ -641,7 +702,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                                     color: Colors.white54,
                                     size: 16,
                                   ),
-                                  onTap: logout,
+                                  onTap: logout, // Show logout confirmation
                                 ),
                               ],
                             ),

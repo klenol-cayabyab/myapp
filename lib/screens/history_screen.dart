@@ -3,9 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
+// Main widget for displaying conversation history
+// This is a StatefulWidget because it needs to manage dynamic data like conversations list
 class HistoryScreen extends StatefulWidget {
-  final Function(String, {String? mode})? onContactSelected;
-  final Function(String)? onConversationDetailRequested;
+  // Callback functions to communicate with parent widget (navigation)
+  final Function(String, {String? mode})?
+  onContactSelected; // Called when user selects a contact to chat with
+  final Function(String)?
+  onConversationDetailRequested; // Called when user wants to view conversation details
 
   const HistoryScreen({
     super.key,
@@ -17,34 +22,50 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
+// State class that handles all the logic and UI for the history screen
 class _HistoryScreenState extends State<HistoryScreen>
     with AutomaticKeepAliveClientMixin {
+  // Keeps the widget alive even when switching tabs (performance optimization)
   @override
   bool get wantKeepAlive => true;
 
-  List<Map<String, dynamic>> _conversations = [];
-  List<Map<String, dynamic>> _filteredConversations = [];
-  bool _isLoading = true;
+  // STATE VARIABLES - Store the app's data
+  List<Map<String, dynamic>> _conversations =
+      []; // All conversations loaded from storage
+  List<Map<String, dynamic>> _filteredConversations =
+      []; // Filtered conversations based on search
+  bool _isLoading = true; // Loading state indicator
 
+  // Controller for the search input field
   final TextEditingController _searchController = TextEditingController();
 
-  //color scheme
-  static const Color primaryDark = Color(0xFF0A1628);
-  static const Color primaryMedium = Color(0xFF1E3A5F);
-  static const Color primaryLight = Color(0xFF2D5A87);
-  static const Color accentColor = Color(0xFF00D4FF);
-  static const Color accentSecondary = Color(0xFF7C3AED);
-  static const Color successColor = Color(0xFF10B981);
-  static const Color warningColor = Color(0xFFF59E0B);
-  static const Color errorColor = Color(0xFFEF4444);
+  // COLOR SCHEME - Defines the app's visual theme
+  static const Color primaryDark = Color(0xFF0A1628); // Dark blue background
+  static const Color primaryMedium = Color(0xFF1E3A5F); // Medium blue for cards
+  static const Color primaryLight = Color(
+    0xFF2D5A87,
+  ); // Light blue for gradients
+  static const Color accentColor = Color(0xFF00D4FF); // Cyan for highlights
+  static const Color accentSecondary = Color(
+    0xFF7C3AED,
+  ); // Purple for secondary elements
+  static const Color successColor = Color(
+    0xFF10B981,
+  ); // Green for success messages
+  static const Color warningColor = Color(0xFFF59E0B); // Orange for warnings
+  static const Color errorColor = Color(0xFFEF4444); // Red for errors
 
+  // INITIALIZATION - Called when widget is first created
   @override
   void initState() {
     super.initState();
-    _loadConversations();
-    _searchController.addListener(_onSearchChanged);
+    _loadConversations(); // Load saved conversations from device storage
+    _searchController.addListener(
+      _onSearchChanged,
+    ); // Listen for search input changes
   }
 
+  // CLEANUP - Called when widget is destroyed
   @override
   void dispose() {
     _searchController.removeListener(_onSearchChanged);
@@ -52,13 +73,17 @@ class _HistoryScreenState extends State<HistoryScreen>
     super.dispose();
   }
 
+  // SEARCH FUNCTIONALITY - Filters conversations based on user input
   void _onSearchChanged() {
     final query = _searchController.text.toLowerCase().trim();
     if (mounted) {
+      // Check if widget is still active
       setState(() {
         if (query.isEmpty) {
+          // Show all conversations if search is empty
           _filteredConversations = List.from(_conversations);
         } else {
+          // Filter conversations by name or message preview
           _filteredConversations = _conversations.where((conversation) {
             final name = conversation['name'].toString().toLowerCase();
             final preview = conversation['preview'].toString().toLowerCase();
@@ -69,37 +94,48 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
+  // DATA LOADING - Retrieves conversations from device storage
   Future<void> _loadConversations() async {
-    if (!mounted) return;
+    if (!mounted) return; // Exit if widget is no longer active
 
     try {
+      // Access device's local storage
       final prefs = await SharedPreferences.getInstance();
       final String? conversationsJson = prefs.getString('conversations_list');
 
       List<Map<String, dynamic>> loadedConversations = [];
 
       if (conversationsJson != null) {
+        // Parse saved conversations from JSON
         final List<dynamic> conversationsList = json.decode(conversationsJson);
 
+        // Enhance each conversation with message statistics
         for (var item in conversationsList) {
           Map<String, dynamic> conversation = Map<String, dynamic>.from(item);
           String contactName = conversation['name'];
+
+          // Get detailed message information for this contact
           Map<String, dynamic> messageInfo = await _getLastMessageInfo(
             contactName,
           );
 
+          // Add message statistics to conversation data
           conversation.addAll({
-            'messageCount': messageInfo['count'],
-            'lastMessageType': messageInfo['type'],
-            'hasVoiceMessages': messageInfo['hasVoice'],
-            'hasFSLMessages': messageInfo['hasFSL'],
-            'lastMessageTime': messageInfo['lastTime'],
+            'messageCount': messageInfo['count'], // Total number of messages
+            'lastMessageType':
+                messageInfo['type'], // Type of last message (text/voice/fsl)
+            'hasVoiceMessages':
+                messageInfo['hasVoice'], // Whether conversation has voice messages
+            'hasFSLMessages':
+                messageInfo['hasFSL'], // Whether conversation has FSL messages
+            'lastMessageTime':
+                messageInfo['lastTime'], // Timestamp of last message
           });
 
           loadedConversations.add(conversation);
         }
       } else {
-        // Initialize with default contacts
+        // First time app launch - create default contacts
         loadedConversations = [
           _createDefaultConversation('Klenol Cayabyab'),
           _createDefaultConversation('Gello Gadaingan'),
@@ -108,24 +144,26 @@ class _HistoryScreenState extends State<HistoryScreen>
           _createDefaultConversation('Gian'),
           _createDefaultConversation('Vhon'),
         ];
-        await _saveConversations(loadedConversations);
+        await _saveConversations(loadedConversations); // Save to storage
       }
 
-      // Sort by last message time
+      // Sort conversations by most recent activity
       loadedConversations.sort((a, b) {
         final aTime = a['lastMessageTime'] ?? 0;
         final bTime = b['lastMessageTime'] ?? 0;
-        return bTime.compareTo(aTime);
+        return bTime.compareTo(aTime); // Most recent first
       });
 
+      // Update UI with loaded data
       if (mounted) {
         setState(() {
           _conversations = loadedConversations;
           _filteredConversations = List.from(loadedConversations);
-          _isLoading = false;
+          _isLoading = false; // Hide loading indicator
         });
       }
     } catch (e) {
+      // Handle loading errors gracefully
       debugPrint('Error loading conversations: $e');
       if (mounted) {
         setState(() => _isLoading = false);
@@ -134,6 +172,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
+  // HELPER FUNCTION - Creates a default conversation structure
   Map<String, dynamic> _createDefaultConversation(String name) {
     return {
       'name': name,
@@ -147,12 +186,14 @@ class _HistoryScreenState extends State<HistoryScreen>
     };
   }
 
+  // MESSAGE ANALYSIS - Analyzes stored messages to get conversation statistics
   Future<Map<String, dynamic>> _getLastMessageInfo(String contactName) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String? messagesJson = prefs.getString('messages_$contactName');
 
       if (messagesJson != null && messagesJson.isNotEmpty) {
+        // Parse messages from JSON
         final List<dynamic> messagesList = json.decode(messagesJson);
         List<Map<String, dynamic>> messages = messagesList
             .cast<Map<String, dynamic>>()
@@ -164,6 +205,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             .toList();
 
         if (messages.isNotEmpty) {
+          // Analyze message types in the conversation
           bool hasVoice = messages.any((msg) => msg['type'] == 'voice');
           bool hasFSL = messages.any((msg) => msg['type'] == 'fsl');
           String lastType = messages.last['type'] ?? 'text';
@@ -182,6 +224,7 @@ class _HistoryScreenState extends State<HistoryScreen>
       debugPrint('Error getting message info: $e');
     }
 
+    // Return default values if no messages found
     return {
       'count': 0,
       'type': 'text',
@@ -191,6 +234,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     };
   }
 
+  // DATA PERSISTENCE - Saves conversations to device storage
   Future<void> _saveConversations(
     List<Map<String, dynamic>> conversations,
   ) async {
@@ -203,13 +247,15 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
+  // ADD NEW CONTACT - Shows dialog to create new conversation
   Future<void> _addNewConversation() async {
-    HapticFeedback.lightImpact();
+    HapticFeedback.lightImpact(); // Provide tactile feedback
     final TextEditingController nameController = TextEditingController();
 
+    // Show dialog for entering contact name
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: false, // User must tap button to close
       builder: (ctx) => AlertDialog(
         backgroundColor: primaryMedium,
         shape: RoundedRectangleBorder(
@@ -264,6 +310,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             onPressed: () {
               final name = nameController.text.trim();
               if (name.isNotEmpty) {
+                // Check for duplicate contact names
                 bool isDuplicate = _conversations.any(
                   (conv) =>
                       conv['name'].toString().toLowerCase() ==
@@ -292,9 +339,10 @@ class _HistoryScreenState extends State<HistoryScreen>
       ),
     );
 
+    // Add the new contact if dialog was completed
     if (result != null && mounted) {
       setState(() {
-        _conversations.insert(0, result);
+        _conversations.insert(0, result); // Add to top of list
         _filteredConversations = List.from(_conversations);
       });
       await _saveConversations(_conversations);
@@ -302,6 +350,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
+  // TIME FORMATTING - Converts timestamp to human-readable format
   String _formatTime(int timestamp) {
     if (timestamp == 0) return 'New';
 
@@ -309,6 +358,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     final messageTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
     final difference = now.difference(messageTime);
 
+    // Format based on time elapsed
     if (difference.inDays > 0) {
       return '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
@@ -320,6 +370,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
+  // DELETE CONVERSATION - Removes conversation and its messages
   Future<void> _deleteConversation(int index) async {
     final contactName = _filteredConversations[index]['name'];
     final originalIndex = _conversations.indexWhere(
@@ -334,6 +385,7 @@ class _HistoryScreenState extends State<HistoryScreen>
 
       await _saveConversations(_conversations);
 
+      // Also delete the actual messages for this contact
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('messages_$contactName');
 
@@ -341,6 +393,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
+  // NOTIFICATION SYSTEM - Shows temporary messages to user
   void _showSnackBar(String message, Color color) {
     if (!mounted) return;
 
@@ -350,6 +403,7 @@ class _HistoryScreenState extends State<HistoryScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
+              // Choose icon based on message type
               color == successColor
                   ? Icons.check_circle
                   : color == errorColor
@@ -380,12 +434,13 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
-  //navigation method that uses the callback system
+  // NAVIGATION HANDLER - Switches to chat screen with selected contact
   void _navigateToChat(String contactName, {String? mode}) async {
-    HapticFeedback.selectionClick();
+    HapticFeedback.selectionClick(); // Provide tactile feedback
 
     try {
-      // Use callback to switch to chat tab with selected contact
+      // Use callback to communicate with parent widget (main app)
+      // This tells the main app to switch to chat tab with this contact
       if (widget.onContactSelected != null) {
         widget.onContactSelected!(contactName, mode: mode);
       }
@@ -395,7 +450,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     }
   }
 
-  //Method to show navigation options
+  // CHAT OPTIONS MODAL - Shows different ways to interact with contact
   void _showNavigationOptions(String contactName) {
     showModalBottomSheet(
       context: context,
@@ -416,10 +471,10 @@ class _HistoryScreenState extends State<HistoryScreen>
         ),
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
-          // Added scroll view to prevent overflow
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Modal handle bar
               Container(
                 width: 50,
                 height: 4,
@@ -429,7 +484,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
               ),
               const SizedBox(height: 24),
-              // Wrapped text in Flexible to prevent overflow
+              // Modal title
               Flexible(
                 child: Text(
                   'Chat with $contactName',
@@ -444,6 +499,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
               ),
               const SizedBox(height: 24),
+              // Different interaction options
               _buildNavigationOption(
                 icon: Icons.chat_rounded,
                 title: 'View Messages',
@@ -490,6 +546,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // UI COMPONENT - Builds individual option buttons in modal
   Widget _buildNavigationOption({
     required IconData icon,
     required String title,
@@ -520,8 +577,8 @@ class _HistoryScreenState extends State<HistoryScreen>
             fontWeight: FontWeight.w600,
             fontSize: 16,
           ),
-          overflow: TextOverflow.ellipsis, // Added overflow handling
-          maxLines: 1, // Limit to single line
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
         ),
         subtitle: Text(
           subtitle,
@@ -535,23 +592,27 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // COLOR GENERATION - Creates consistent avatar colors based on name
   Color _getAvatarColor(String name) {
     const colors = [
-      Color(0xFF3B82F6),
-      Color(0xFF8B5CF6),
-      Color(0xFF10B981),
-      Color(0xFFF59E0B),
-      Color(0xFFEF4444),
-      Color(0xFF06B6D4),
+      Color(0xFF3B82F6), // Blue
+      Color(0xFF8B5CF6), // Purple
+      Color(0xFF10B981), // Green
+      Color(0xFFF59E0B), // Orange
+      Color(0xFFEF4444), // Red
+      Color(0xFF06B6D4), // Cyan
     ];
-    return colors[name.hashCode % colors.length];
+    return colors[name.hashCode %
+        colors.length]; // Use name hash for consistent color
   }
 
+  // UI COMPONENT - Shows message when conversation list is empty
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          // Empty state icon
           Container(
             padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
@@ -571,6 +632,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             ),
           ),
           const SizedBox(height: 32),
+          // Dynamic title based on search state
           Text(
             _filteredConversations.isEmpty && _searchController.text.isNotEmpty
                 ? 'No matches found'
@@ -583,6 +645,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             ),
           ),
           const SizedBox(height: 12),
+          // Dynamic subtitle with helpful guidance
           Text(
             _filteredConversations.isEmpty && _searchController.text.isNotEmpty
                 ? 'Try searching with different keywords'
@@ -599,6 +662,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // UI COMPONENT - Search input field with dynamic clear button
   Widget _buildSearchBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -622,6 +686,7 @@ class _HistoryScreenState extends State<HistoryScreen>
             Icons.search_rounded,
             color: Colors.white.withOpacity(0.7),
           ),
+          // Show clear button only when there's text
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
                   icon: Icon(
@@ -641,9 +706,11 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // UI COMPONENT - Shows message type indicators (Voice/FSL badges)
   Widget _buildMessageTypeIndicators(Map<String, dynamic> conversation) {
     List<Widget> indicators = [];
 
+    // Add Voice indicator if conversation has voice messages
     if (conversation['hasVoiceMessages'] == true) {
       indicators.add(
         Container(
@@ -665,6 +732,7 @@ class _HistoryScreenState extends State<HistoryScreen>
       );
     }
 
+    // Add FSL indicator if conversation has FSL messages
     if (conversation['hasFSLMessages'] == true) {
       indicators.add(
         Container(
@@ -697,14 +765,16 @@ class _HistoryScreenState extends State<HistoryScreen>
     return Wrap(spacing: 4, children: indicators);
   }
 
+  // UI COMPONENT - Individual conversation card with swipe-to-delete
   Widget _buildConversationCard(Map<String, dynamic> conversation, int index) {
     return Dismissible(
       key: Key('${conversation['name']}_$index'),
-      direction: DismissDirection.endToStart,
+      direction:
+          DismissDirection.endToStart, // Only allow swiping from right to left
       confirmDismiss: (direction) =>
           _showDeleteConfirmation(conversation['name']),
       onDismissed: (direction) => _deleteConversation(index),
-      background: _buildDismissBackground(),
+      background: _buildDismissBackground(), // Red background when swiping
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
@@ -721,18 +791,20 @@ class _HistoryScreenState extends State<HistoryScreen>
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: () => _navigateToChat(conversation['name']),
-            onLongPress: () => _showNavigationOptions(conversation['name']),
+            onTap: () => _navigateToChat(conversation['name']), // Quick chat
+            onLongPress: () =>
+                _showNavigationOptions(conversation['name']), // Show options
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
-                  _buildAvatar(conversation['name']),
+                  _buildAvatar(conversation['name']), // Contact avatar
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Contact name and timestamp row
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -748,6 +820,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            // Time badge
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -779,8 +852,10 @@ class _HistoryScreenState extends State<HistoryScreen>
                           ],
                         ),
                         const SizedBox(height: 8),
+                        // Message preview with type icon
                         Row(
                           children: [
+                            // Show icon based on last message type
                             if (conversation['lastMessageType'] == 'voice')
                               const Padding(
                                 padding: EdgeInsets.only(right: 6),
@@ -814,12 +889,16 @@ class _HistoryScreenState extends State<HistoryScreen>
                           ],
                         ),
                         const SizedBox(height: 8),
+                        // Bottom row with indicators and actions
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildMessageTypeIndicators(conversation),
+                            _buildMessageTypeIndicators(
+                              conversation,
+                            ), // Voice/FSL badges
                             Row(
                               children: [
+                                // Message count badge
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
@@ -839,7 +918,9 @@ class _HistoryScreenState extends State<HistoryScreen>
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                _buildChatButton(conversation['name']),
+                                _buildChatButton(
+                                  conversation['name'],
+                                ), // Quick chat button
                               ],
                             ),
                           ],
@@ -856,6 +937,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // UI COMPONENT - Circular avatar with contact's initial
   Widget _buildAvatar(String name) {
     return Container(
       width: 56,
@@ -872,7 +954,7 @@ class _HistoryScreenState extends State<HistoryScreen>
       ),
       child: Center(
         child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          name.isNotEmpty ? name[0].toUpperCase() : '?', // First letter of name
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -883,6 +965,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // UI COMPONENT - Small chat button with gradient background
   Widget _buildChatButton(String contactName) {
     return Container(
       decoration: const BoxDecoration(
@@ -903,6 +986,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // UI COMPONENT - Red background shown when swiping to delete
   Widget _buildDismissBackground() {
     return Container(
       alignment: Alignment.centerRight,
@@ -932,6 +1016,7 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // CONFIRMATION DIALOG - Asks user to confirm deletion
   Future<bool?> _showDeleteConfirmation(String contactName) {
     return showDialog<bool>(
       context: context,
@@ -960,7 +1045,7 @@ class _HistoryScreenState extends State<HistoryScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
+            onPressed: () => Navigator.of(ctx).pop(false), // Cancel deletion
             child: Text(
               'Cancel',
               style: TextStyle(color: Colors.white.withOpacity(0.7)),
@@ -968,8 +1053,8 @@ class _HistoryScreenState extends State<HistoryScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              HapticFeedback.heavyImpact();
-              Navigator.of(ctx).pop(true);
+              HapticFeedback.heavyImpact(); // Strong vibration for destructive action
+              Navigator.of(ctx).pop(true); // Confirm deletion
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: errorColor,
@@ -985,10 +1070,12 @@ class _HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  // MAIN BUILD METHOD - Constructs the entire screen UI
   @override
   Widget build(BuildContext context) {
-    super.build(context);
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
 
+    // Show loading screen while data is being loaded
     if (_isLoading) {
       return Scaffold(
         backgroundColor: primaryDark,
@@ -1023,6 +1110,7 @@ class _HistoryScreenState extends State<HistoryScreen>
       );
     }
 
+    // Main screen layout
     return Scaffold(
       backgroundColor: primaryDark,
       body: Container(
@@ -1034,9 +1122,10 @@ class _HistoryScreenState extends State<HistoryScreen>
           ),
         ),
         child: SafeArea(
+          // Ensures content doesn't overlap with system UI
           child: Column(
             children: [
-              // Header
+              // HEADER SECTION - App title and contact count
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
@@ -1045,6 +1134,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
                 child: Column(
                   children: [
+                    // Main title with icon
                     const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1066,6 +1156,7 @@ class _HistoryScreenState extends State<HistoryScreen>
                       ],
                     ),
                     const SizedBox(height: 12),
+                    // Contact counter badge
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -1094,16 +1185,18 @@ class _HistoryScreenState extends State<HistoryScreen>
                 ),
               ),
 
-              // Search Bar
+              // SEARCH BAR - Only shown when there are conversations
               if (_conversations.isNotEmpty) _buildSearchBar(),
 
-              // Content
+              // MAIN CONTENT AREA
               Expanded(
                 child: _filteredConversations.isEmpty
-                    ? _buildEmptyState()
+                    ? _buildEmptyState() // Show empty state message
                     : ListView.builder(
+                        // Show conversation list
                         padding: const EdgeInsets.only(bottom: 20),
-                        physics: const BouncingScrollPhysics(),
+                        physics:
+                            const BouncingScrollPhysics(), // iOS-style scrolling
                         itemCount: _filteredConversations.length,
                         itemBuilder: (context, index) {
                           return _buildConversationCard(
@@ -1117,6 +1210,7 @@ class _HistoryScreenState extends State<HistoryScreen>
           ),
         ),
       ),
+      // FLOATING ACTION BUTTON - Add new conversation
       floatingActionButton: Container(
         margin: const EdgeInsets.only(bottom: 8, right: 8),
         decoration: const BoxDecoration(

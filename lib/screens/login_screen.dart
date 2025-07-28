@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// Login Screen Widget for Tinig-Kamay Communication Platform
+/// This is a StatefulWidget that provides user authentication interface
+/// with animations, form validation, and user feedback
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -8,23 +11,32 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
+/// State class for LoginScreen with TickerProviderStateMixin for animations
 class _LoginScreenState extends State<LoginScreen>
     with TickerProviderStateMixin {
+  // Controllers for managing text input fields
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
+  // Form key for validation management
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  bool _isPasswordVisible = false;
-  bool _isLoading = false;
-  bool _rememberMe = false;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late AnimationController _shakeController;
-  late Animation<double> _shakeAnimation;
+  // State variables for UI behavior
+  bool _isPasswordVisible = false; // Controls password field visibility
+  bool _isLoading = false; // Shows loading state during login
+  bool _rememberMe = false; // Remember user credentials checkbox
+
+  // Animation controllers and animations for UI effects
+  late AnimationController _animationController; // Main fade-in animation
+  late Animation<double> _fadeAnimation; // Fade effect for entire form
+  late AnimationController _shakeController; // Shake animation for errors
+  late Animation<double> _shakeAnimation; // Shake effect for form
 
   @override
   void initState() {
     super.initState();
+
+    // Initialize fade-in animation for smooth screen entrance
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -33,6 +45,7 @@ class _LoginScreenState extends State<LoginScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
 
+    // Initialize shake animation for error feedback
     _shakeController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
@@ -41,11 +54,13 @@ class _LoginScreenState extends State<LoginScreen>
       CurvedAnimation(parent: _shakeController, curve: Curves.elasticIn),
     );
 
+    // Start the fade-in animation when screen loads
     _animationController.forward();
   }
 
   @override
   void dispose() {
+    // Clean up controllers to prevent memory leaks
     _animationController.dispose();
     _shakeController.dispose();
     _usernameController.dispose();
@@ -53,52 +68,62 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  /// Triggers shake animation for form validation errors
+  /// Provides visual feedback when login fails or validation errors occur
   void _shakeForm() {
     _shakeController.forward().then((_) {
       _shakeController.reverse();
     });
   }
 
+  /// Handles user login process with validation and feedback
+  /// Includes haptic feedback and loading states for better UX
   Future<void> _login() async {
+    // Validate form fields before proceeding
     if (!_formKey.currentState!.validate()) {
-      _shakeForm();
+      _shakeForm(); // Show error animation
       return;
     }
 
+    // Show loading state
     setState(() {
       _isLoading = true;
     });
 
-    // Haptic feedback
+    // Provide haptic feedback for button press
     HapticFeedback.lightImpact();
 
-    // Simulate network delay
+    // Simulate network delay (replace with actual API call)
     await Future.delayed(const Duration(seconds: 2));
 
-    // Basic validation - replace with real authentication
+    // Basic validation - replace with real authentication logic
     if (_usernameController.text.isNotEmpty &&
         _passwordController.text.isNotEmpty) {
-      // Success haptic
+      // Success feedback
       HapticFeedback.mediumImpact();
 
+      // Handle remember me functionality
       if (_rememberMe) {
-        // Save credentials to SharedPreferences here
+        // TODO: Save credentials to SharedPreferences here
         _showSuccessSnackBar('Login successful! Credentials saved.');
       }
 
+      // Navigate to home screen on successful login
       Navigator.pushReplacementNamed(context, '/home');
     } else {
-      // Error haptic
+      // Error feedback for failed login
       HapticFeedback.heavyImpact();
       _shakeForm();
       _showErrorSnackBar('Invalid credentials. Please try again.');
     }
 
+    // Hide loading state
     setState(() {
       _isLoading = false;
     });
   }
 
+  /// Shows success message with green snackbar and check icon
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -116,6 +141,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  /// Shows error message with red snackbar and error icon
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -133,11 +159,13 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  /// Shows forgot password dialog with email input field
+  /// Allows users to request password reset
   void _showForgotPasswordDialog() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF083D77),
+        backgroundColor: const Color(0xFF083D77), // Match app theme
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Forgot Password?',
@@ -151,6 +179,7 @@ class _LoginScreenState extends State<LoginScreen>
               style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 16),
+            // Email input field for password reset
             TextField(
               decoration: InputDecoration(
                 hintText: 'Email',
@@ -166,10 +195,12 @@ class _LoginScreenState extends State<LoginScreen>
           ],
         ),
         actions: [
+          // Cancel button
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel', style: TextStyle(color: Colors.grey[400])),
           ),
+          // Send reset link button
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
@@ -188,6 +219,8 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  /// Validates username input field
+  /// Returns error message if validation fails, null if valid
   String? _validateUsername(String? value) {
     if (value == null || value.isEmpty) {
       return 'Username is required';
@@ -195,9 +228,11 @@ class _LoginScreenState extends State<LoginScreen>
     if (value.length < 3) {
       return 'Username must be at least 3 characters';
     }
-    return null;
+    return null; // Valid input
   }
 
+  /// Validates password input field
+  /// Returns error message if validation fails, null if valid
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return 'Password is required';
@@ -205,14 +240,15 @@ class _LoginScreenState extends State<LoginScreen>
     if (value.length < 6) {
       return 'Password must be at least 6 characters';
     }
-    return null;
+    return null; // Valid input
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF083D77),
+      backgroundColor: const Color(0xFF083D77), // Primary blue color
       body: Container(
+        // Gradient background for visual appeal
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -226,24 +262,27 @@ class _LoginScreenState extends State<LoginScreen>
             child: Center(
               child: SingleChildScrollView(
                 child: FadeTransition(
-                  opacity: _fadeAnimation,
+                  opacity: _fadeAnimation, // Fade-in animation for entire form
                   child: AnimatedBuilder(
                     animation: _shakeAnimation,
                     builder: (context, child) {
                       return Transform.translate(
-                        offset: Offset(_shakeAnimation.value, 0),
+                        offset: Offset(
+                          _shakeAnimation.value,
+                          0,
+                        ), // Shake effect
                         child: Form(
                           key: _formKey,
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              // Logo with animation
+                              // App logo with scale animation
                               TweenAnimationBuilder<double>(
                                 tween: Tween(begin: 0.0, end: 1.0),
                                 duration: const Duration(milliseconds: 800),
                                 builder: (context, value, child) {
                                   return Transform.scale(
-                                    scale: value,
+                                    scale: value, // Scale animation for logo
                                     child: Container(
                                       padding: const EdgeInsets.all(20),
                                       decoration: BoxDecoration(
@@ -256,6 +295,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           width: 2,
                                         ),
                                       ),
+                                      // Sign language icon representing the app's purpose
                                       child: Icon(
                                         Icons.sign_language,
                                         color: Colors.yellow[700],
@@ -267,7 +307,7 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                               const SizedBox(height: 20),
 
-                              // App name with gradient text
+                              // App title with gradient text effect
                               ShaderMask(
                                 shaderCallback: (bounds) => LinearGradient(
                                   colors: [Colors.yellow[700]!, Colors.white],
@@ -282,8 +322,9 @@ class _LoginScreenState extends State<LoginScreen>
                                 ),
                               ),
 
+                              // App subtitle/description
                               const Text(
-                                'Sign Language Learning Platform',
+                                'Communication Platform for Deaf Community',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.white70,
@@ -292,7 +333,7 @@ class _LoginScreenState extends State<LoginScreen>
 
                               const SizedBox(height: 40),
 
-                              // Username field with validation
+                              // Username input field with validation
                               TextFormField(
                                 controller: _usernameController,
                                 validator: _validateUsername,
@@ -307,6 +348,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                   filled: true,
                                   fillColor: Colors.white.withOpacity(0.1),
+                                  // Different border styles for different states
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
                                     borderSide: BorderSide.none,
@@ -336,11 +378,12 @@ class _LoginScreenState extends State<LoginScreen>
 
                               const SizedBox(height: 16),
 
-                              // Password field with visibility toggle
+                              // Password input field with visibility toggle
                               TextFormField(
                                 controller: _passwordController,
                                 validator: _validatePassword,
-                                obscureText: !_isPasswordVisible,
+                                obscureText:
+                                    !_isPasswordVisible, // Hide/show password
                                 decoration: InputDecoration(
                                   hintText: 'Password',
                                   hintStyle: const TextStyle(
@@ -350,6 +393,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     Icons.lock,
                                     color: Colors.white54,
                                   ),
+                                  // Toggle button for password visibility
                                   suffixIcon: IconButton(
                                     icon: Icon(
                                       _isPasswordVisible
@@ -395,9 +439,10 @@ class _LoginScreenState extends State<LoginScreen>
 
                               const SizedBox(height: 16),
 
-                              // Remember me checkbox
+                              // Row containing remember me checkbox and forgot password link
                               Row(
                                 children: [
+                                  // Remember me checkbox
                                   Checkbox(
                                     value: _rememberMe,
                                     onChanged: (value) {
@@ -412,7 +457,8 @@ class _LoginScreenState extends State<LoginScreen>
                                     'Remember me',
                                     style: TextStyle(color: Colors.white70),
                                   ),
-                                  const Spacer(),
+                                  const Spacer(), // Push forgot password to the right
+                                  // Forgot password link
                                   TextButton(
                                     onPressed: _showForgotPasswordDialog,
                                     child: Text(
@@ -433,7 +479,9 @@ class _LoginScreenState extends State<LoginScreen>
                                 width: double.infinity,
                                 height: 56,
                                 child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _login,
+                                  onPressed: _isLoading
+                                      ? null
+                                      : _login, // Disable when loading
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.yellow[700],
                                     disabledBackgroundColor: Colors.yellow[700]
@@ -446,7 +494,8 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                   ),
                                   child: _isLoading
-                                      ? const SizedBox(
+                                      ? // Show loading spinner when processing
+                                        const SizedBox(
                                           height: 20,
                                           width: 20,
                                           child: CircularProgressIndicator(
@@ -457,7 +506,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                 ),
                                           ),
                                         )
-                                      : const Text(
+                                      : // Show "Sign In" text when not loading
+                                        const Text(
                                           'Sign In',
                                           style: TextStyle(
                                             color: Color(0xFF083D77),
@@ -470,7 +520,7 @@ class _LoginScreenState extends State<LoginScreen>
 
                               const SizedBox(height: 20),
 
-                              // Sign up link
+                              // Sign up link for new users
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
@@ -480,7 +530,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                   TextButton(
                                     onPressed: () {
-                                      // Navigate to sign up screen
+                                      // TODO: Navigate to sign up screen
                                     },
                                     child: Text(
                                       'Sign Up',

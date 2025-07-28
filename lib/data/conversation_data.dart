@@ -1,4 +1,4 @@
-import '../models/message_model.dart';
+/*import '../models/message_model.dart';
 
 Map<String, List<Message>> conversations = {
   "Juan Dela Cruz": [
@@ -18,3 +18,4 @@ void addMessageToConversation(String contactName, Message message) {
   }
   conversations[contactName]!.add(message);
 }
+*/
